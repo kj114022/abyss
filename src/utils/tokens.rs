@@ -7,18 +7,13 @@ pub fn count_tokens(text: &str) -> Result<usize> {
     Ok(tokens.len())
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-
-
     #[test]
     fn test_count_tokens_ascii() {
         let text = "hello world";
-        // "hello" " world" -> 2 tokens usually in cl100k_base
         let count = count_tokens(text).unwrap();
         assert!(count > 0);
     }
@@ -27,7 +22,7 @@ mod tests {
     fn test_count_tokens_special() {
         let text = "fn main() { println!(\"test\"); }";
         let count = count_tokens(text).unwrap();
-        assert!(count > 5); // Rough check
+        assert!(count > 5);
     }
 
     #[test]
