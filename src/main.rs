@@ -113,7 +113,7 @@ struct Args {
 
     /// GPT-4 preset (128K tokens)
     #[arg(long)]
-    gpt4: bool,
+    gpt: bool,
 
     /// Claude preset (200K tokens)
     #[arg(long)]
@@ -211,7 +211,7 @@ fn main() -> Result<()> {
     }
 
     // Direct model preset flags
-    if args.gpt4 {
+    if args.gpt {
         config.max_tokens = Some(128_000);
     } else if args.claude {
         config.max_tokens = Some(200_000);
