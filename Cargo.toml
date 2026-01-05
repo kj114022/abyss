@@ -48,3 +48,21 @@ image = "0.24"
 glob = "0.3.3"
 indicatif = "0.18.3"
 clap_complete = "4.5.64"
+
+[dev-dependencies]
+criterion = { version = "0.8.1", features = ["html_reports"] }
+
+[[bench]]
+name = "tokenization"
+harness = false
+
+[[bench]]
+name = "full_scan"
+harness = false
+
+[profile.bench]
+debug = true
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
