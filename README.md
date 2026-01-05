@@ -1,124 +1,76 @@
-# Abyss
+# abyss
 
-<div align="center">
+A semantic context engine for Large Language Models.
+Optimizes codebase context ingestion through graph-theoretic ranking, AST-aware compression, and multi-modal analysis.
 
-![Abyss](https://img.shields.io/badge/Abyss-v1.0-blueviolet?style=for-the-badge&logo=rust)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+## Core Architecture
 
-**The Cognitive Code Interface for AI Agents.**
+Abyss is not a concatenation tool. It is a relevance engine that transforms raw source code into high-signal prompts by prioritizing information density and structural centrality.
 
-*Not just a packer. A bridge between human codebases and artificial intelligence.*
+### 1. Semantic Relevance Engine
+The system ranks files based on a weighted multi-variable score:
+- **PageRank Centrality**: Computes the dependency graph to weight "core" modules (highly referenced) over "leaf" nodes.
+- **Shannon Entropy**: Measures information density (byte distribution) to distinguish algorithmic logic from boilerplate.
+- **Topological Sorting**: Context is assembled in dependency order (libraries before consumers) to maximize LLM comprehension.
+- **Git Heuristics**: Files with high churn or recent modifications are boosted in relevance.
 
-</div>
+### 2. AST-Aware Compression
+Reduces token density without information loss:
+- **Smart Mode**: Parses source code (Rust, TypeScript, Python) to strip comments and normalize whitespace while preserving function signatures and structural hierarchy.
+- **Knapsack Filtering**: Enforces strict token limits (e.g., 32k) by discarding lowest-ranking files, ensuring the context window contains the most "expensive" information first.
 
----
-
-## Overview
-
-Abyss is a high-performance **context generation engine** built in Rust. It transforms raw source code into optimized, token-aware, and spatially organized prompts for Large Language Models (LLMs).
-
-Unlike simple file concatenators, Abyss "reads" your code like a senior engineer. It understands **abstract syntax trees (ASTs)**, **git history**, **dependency graphs**, and **semantic relevance**, allowing you to feed tens of thousands of lines of code into an LLM without wasting context window or losing coherence.
-
-**Key Capabilities:**
-- **Smart Ranking**: Prioritizes "entry point" files (main.rs, index.ts) and frequently churned code.
-- **AST Compression**: Strips implementation details while preserving signatures (Rust, JS, TS, Python).
-- **Temporal Context**: Enriches code with "evolution narratives" derived from Git history.
-- **Mission Control TUI**: A terminal interface for interactive file selection and configuration.
-
-## Features
-
-### Intelligence Layer
-- **AST-Aware Compression**: Reduce token usage by 60% by stripping function bodies but keeping signatures. Perfect for "high-level architecture" prompts.
-- **Temporal Awareness**: Automatically detects "hot spots" in your codebase based on recent commit activity.
-- **Dependency Graphing**: Generates Mermaid diagrams of module relationships to help LLMs visualize architecture.
-- **PII Redaction**: Built-in privacy layer automatically redacts API keys, email addresses, and secrets.
-
-### Mission Control (TUI)
-Launch the interactive dashboard with `abyss --tui`.
-- **The Navigator**: Traverse your file tree with keyboard navigation.
-- **The Inspector**: Preview files with syntax highlighting and metadata.
-- **The Commander**: Adjust settings (depth, compression, format) in real-time and rescan instantly.
-
-### Production Ready
-- **Multi-Format**: Output to XML (default), JSON, Markdown, or Plain Text.
-- **Cost Estimation**: Estimates API costs for GPT-4, Claude 3, and DeepSeek.
-- **Parallel Processing**: Blazing fast optimization using Rayon for multi-threaded traversal.
-- **Remote Cloning**: Seamlessly handles HTTPS and SSH git URLs.
+### 3. Omnivore Engine (Multi-Modal)
+- **PDF Extraction**: Integrated `pdf-extract` for specification and paper analysis.
+- **Binary Classification**: Heuristic detection of binary assets (images, compiled objects) to exclude them from text context, inserting metadata placeholders instead.
 
 ## Installation
 
+Building from source requires a robust Rust toolchain.
+
 ```bash
-# From source
 cargo install --path .
 ```
 
 ## Usage
 
-### Quick Start
-```bash
-# Scan current directory and output to XML (stdout)
-abyss .
-
-# Copy to clipboard immediately
-abyss . --copy
-```
-
-### Advanced Workflows
-
-**1. The "Architectural View" (Low Token Cost)**
-Get a high-level overview of a large repo without the noise.
-```bash
-abyss . --smart --format markdown --max-depth 2
-```
-
-**2. The "Bug Fix" Context (High Specificity)**
-Focus on a specific module, including recent changes and relevant dependencies.
-```bash
-abyss src/auth --include "**/*.rs" --temporal --diff main
-```
-
-**3. Interactive Mode**
-Select exactly which files to include using the TUI.
-```bash
-abyss . --tui
-```
-
-## Configuration
-
-Abyss supports a rich set of CLI flags for granular control:
-
-| Category | Flag | Description |
-|----------|------|-------------|
-| **Core** | `--format <fmt>` | `xml` (default), `json`, `md`, `plain`. |
-| | `--output <file>` | Write to file instead of stdout. |
-| | `--copy` | Copy output to system clipboard. |
-| **Optimization** | `--smart` | Enable AST-based compression (signatures only). |
-| | `--compress` | Simple whitespace/comment removal. |
-| | `--no-tokens` | Skip token counting (faster). |
-| **Filtering** | `--max-depth <N>` | Limit traversal depth. |
-| | `--max-size <N>` | Skip files larger than N bytes. |
-| | `--ignore <glob>` | Add custom ignore patterns. |
-| | `--include <glob>` | Whitelist specific patterns. |
-| **Intelligence** | `--temporal` | Include Git history context. |
-| | `--diff <ref>` | Only include changed files vs git ref. |
-| | `--cost` | Show estimated API costs. |
-
-## Privacy & Security
-
-Abyss is designed for enterprise use.
-- **Local Processing**: All analysis happens locally on your machine.
-- **Secret Redaction**: Regex-based filters automatically mask common API key patterns and PII.
-- **Respects .gitignore**: Automatically honors your project's ignore files.
-
-## Contributing
-
-Contributions are welcome! Please ensure you pass all strict linting rules:
+### Interactive Dashboard (TUI)
+Launch the mission control interface for precise file selection and configuration.
 
 ```bash
-cargo clippy -- -D warnings
-cargo test
+abyss --tui
 ```
+
+**Key Bindings:**
+- `t`: Enter Task Mode (fuzzy search/filter).
+- `Ctrl+a`: Select all visible files in Task Mode.
+- `Mouse`: Scroll lists and configurations.
+- `r`: Trigger re-scan of selected files.
+
+### CLI Automation
+Generate XML context for the current directory, optimized for a 32k token window.
+
+```bash
+abyss . --max-tokens 32000 --output context.xml
+```
+
+### Configuration
+Abyss defaults to sensible production standards. Override via CLI or `abyss.toml`.
+
+| Flag | Description |
+|------|-------------|
+| `--graph` | Inject Mermaid dependency diagrams into the output context. |
+| `--diff <REF>` | Restrict scan to files changed relative to Git REF (e.g., `HEAD~1`). |
+| `--smart` | Enable AST-aware compression (removes comments, compacts code). |
+| `--no-tokens` | Disable token counting for maximum IO throughput. |
+
+## Engineering Standards
+
+This project adheres to strict production engineering constraints:
+- **Zero Ambiguity**: Defaults are explicit. Behavior is deterministic.
+- **Observability**: Verbose logging explains exclusion decisions.
+- **Performance**: Parallel directory walking, cached syntax highlighting, and zero-copy string handling where possible.
 
 ## License
+Proprietary. All Rights Reserved.
+Unauthorized copying, modification, distribution, or use of this software is strictly prohibited.
 
-MIT License. See [LICENSE](LICENSE) for details.
