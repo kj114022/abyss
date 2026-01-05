@@ -145,6 +145,62 @@ pub fn get_diff_files(repo_path: &Path, target_ref: &str) -> Option<Vec<String>>
     Some(files)
 }
 
+#[derive(Debug, Clone)]
+pub struct DiffContext {
+    pub files: Vec<String>,
+    pub commits: Vec<String>,
+}
+
+/// Returns files changed and commit messages between HEAD and target_ref.
+pub fn get_diff_context(repo_path: &Path, target_ref: &str) -> Option<DiffContext> {
+    let repo = Repository::open(repo_path).ok()?;
+
+    // Resolve HEAD and Target
+    let head = repo.head().ok()?;
+    let head_commit = head.peel_to_commit().ok()?;
+    let head_tree = head_commit.tree().ok()?;
+
+    let target_obj = repo.revparse_single(target_ref).ok()?;
+    let target_commit = target_obj.peel_to_commit().ok()?;
+    let target_tree = target_commit.tree().ok()?;
+
+    // 1. Get Changed Files
+    let diff = repo
+        .diff_tree_to_tree(Some(&target_tree), Some(&head_tree), None)
+        .ok()?;
+
+    let mut files = Vec::new();
+    let _ = diff.foreach(
+        &mut |delta, _hunks| {
+            if let Some(path_str) = delta.new_file().path().and_then(|p| p.to_str()) {
+                files.push(path_str.to_string());
+            }
+            true
+        },
+        None,
+        None,
+        None,
+    );
+
+    // 2. Get Commit Messages
+    let mut commits = Vec::new();
+    let mut revwalk = repo.revwalk().ok()?;
+    revwalk.push(head_commit.id()).ok()?;
+    revwalk.hide(target_commit.id()).ok()?;
+
+    for oid in revwalk.flatten() {
+        if let Some(msg) = repo
+            .find_commit(oid)
+            .ok()
+            .and_then(|c| c.summary().map(|s| s.to_string()))
+        {
+            commits.push(msg);
+        }
+    }
+
+    Some(DiffContext { files, commits })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
