@@ -117,24 +117,28 @@ fn run_app<B: ratatui::backend::Backend>(
                             KeyCode::Backspace => {
                                 state.search_query.pop();
                                 if let Some(tree) = &mut state.file_tree {
-                                     let query = state.search_query.to_lowercase();
-                                     tree.filter(&query);
+                                    let query = state.search_query.to_lowercase();
+                                    tree.filter(&query);
                                 }
-                            },
+                            }
 
-                            KeyCode::Char('a') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                            KeyCode::Char('a')
+                                if key
+                                    .modifiers
+                                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                            {
                                 // Select All Visible
                                 if let Some(tree) = &mut state.file_tree {
                                     tree.select_all_visible(true);
                                 }
-                            },
+                            }
                             KeyCode::Char(c) => {
                                 state.search_query.push(c);
                                 if let Some(tree) = &mut state.file_tree {
-                                     let query = state.search_query.to_lowercase();
-                                     tree.filter(&query);
+                                    let query = state.search_query.to_lowercase();
+                                    tree.filter(&query);
                                 }
-                            },
+                            }
                             _ => {}
                         }
                     } else {
@@ -149,7 +153,7 @@ fn run_app<B: ratatui::backend::Backend>(
                                 if let Some(tree) = &mut state.file_tree {
                                     tree.filter("");
                                 }
-                            },
+                            }
                             KeyCode::Tab => state.next_tab(),
                             KeyCode::Char('o') => {
                                 if state.step == AppStep::Done {
@@ -178,7 +182,9 @@ fn run_app<B: ratatui::backend::Backend>(
                                 KeyCode::Down | KeyCode::Char('j') => state.next_config_item(),
                                 KeyCode::Up | KeyCode::Char('k') => state.previous_config_item(),
                                 KeyCode::Enter | KeyCode::Char(' ') => state.toggle_config_bool(),
-                                KeyCode::Right | KeyCode::Char('l') => state.increase_config_value(),
+                                KeyCode::Right | KeyCode::Char('l') => {
+                                    state.increase_config_value()
+                                }
                                 KeyCode::Left | KeyCode::Char('h') => state.decrease_config_value(),
                                 KeyCode::Char('r') => {
                                     // Trigger Rescan
@@ -248,8 +254,8 @@ fn run_app<B: ratatui::backend::Backend>(
                                                     config_clone,
                                                     Some(tx_clone.clone()),
                                                 ) {
-                                                    let _ =
-                                                        tx_clone.send(ScanEvent::Error(e.to_string()));
+                                                    let _ = tx_clone
+                                                        .send(ScanEvent::Error(e.to_string()));
                                                 }
                                             });
                                         }
@@ -261,24 +267,24 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                 }
                 Event::Mouse(mouse) => {
-                     use crossterm::event::MouseEventKind;
-                     match mouse.kind {
-                         MouseEventKind::ScrollDown => {
-                             if state.active_tab == 0 {
-                                 state.next_file();
-                             } else {
-                                 state.next_config_item();
-                             }
-                         }
-                         MouseEventKind::ScrollUp => {
-                             if state.active_tab == 0 {
-                                 state.previous_file();
-                             } else {
-                                 state.previous_config_item();
-                             }
-                         }
-                         _ => {}
-                     }
+                    use crossterm::event::MouseEventKind;
+                    match mouse.kind {
+                        MouseEventKind::ScrollDown => {
+                            if state.active_tab == 0 {
+                                state.next_file();
+                            } else {
+                                state.next_config_item();
+                            }
+                        }
+                        MouseEventKind::ScrollUp => {
+                            if state.active_tab == 0 {
+                                state.previous_file();
+                            } else {
+                                state.previous_config_item();
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }

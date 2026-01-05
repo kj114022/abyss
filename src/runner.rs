@@ -444,129 +444,134 @@ pub fn process_files(
                 .par_iter()
                 .enumerate()
                 .for_each(|(index, path)| {
-                        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
-                        let mut content;
+                    let extension = path
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let mut content;
 
-                        if extension == "pdf" {
-                             match crate::utils::pdf::extract_text(path) {
-                                Ok(text) => content = text,
-                                Err(e) => {
-                                    eprintln!("Failed to extract PDF: {}", e);
+                    if extension == "pdf" {
+                        match crate::utils::pdf::extract_text(path) {
+                            Ok(text) => content = text,
+                            Err(e) => {
+                                eprintln!("Failed to extract PDF: {}", e);
+                                let _ = data_tx.send((index, None));
+                                return;
+                            }
+                        }
+                    } else if ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff"]
+                        .contains(&extension.as_str())
+                    {
+                        match crate::utils::image::describe_image(path) {
+                            Ok(desc) => content = desc,
+                            Err(e) => {
+                                eprintln!("Failed to describe image: {}", e);
+                                let _ = data_tx.send((index, None));
+                                return;
+                            }
+                        }
+                    } else {
+                        // Standard Text/Binary File
+                        match std_fs::read(path) {
+                            Ok(bytes) => {
+                                if crate::utils::binary::is_binary(&bytes) {
                                     let _ = data_tx.send((index, None));
                                     return;
                                 }
-                             }
-                        } else if ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff"].contains(&extension.as_str()) {
-                             match crate::utils::image::describe_image(path) {
-                                Ok(desc) => content = desc,
-                                Err(e) => {
-                                    eprintln!("Failed to describe image: {}", e);
-                                    let _ = data_tx.send((index, None));
-                                    return;
-                                }
-                             }
-                        } else {
-                            // Standard Text/Binary File
-                            match std_fs::read(path) {
-                                Ok(bytes) => {
-                                    if crate::utils::binary::is_binary(&bytes) {
-                                        let _ = data_tx.send((index, None));
-                                        return;
-                                    }
-                                    content = String::from_utf8_lossy(&bytes).to_string();
-                                }
-                                Err(_) => {
-                                     let _ = data_tx.send((index, None));
-                                     return;
-                                }
+                                content = String::from_utf8_lossy(&bytes).to_string();
+                            }
+                            Err(_) => {
+                                let _ = data_tx.send((index, None));
+                                return;
                             }
                         }
+                    }
 
-                        let modified_time = get_modified_time(path).unwrap_or(0);
-                        let mut cached_entry = None;
+                    let modified_time = get_modified_time(path).unwrap_or(0);
+                    let mut cached_entry = None;
 
-                        if modified_time > 0 {
-                            let hash =
-                                crate::utils::cache::Cache::compute_hash(&content, config_sig_ref);
-                            #[allow(clippy::collapsible_if)]
-                            if let Some(entry) = cache_ref.get(&path.to_string_lossy()) {
-                                if entry.modified == modified_time && entry.hash == hash {
-                                    cached_entry = Some(entry.tokens);
-                                }
+                    if modified_time > 0 {
+                        let hash =
+                            crate::utils::cache::Cache::compute_hash(&content, config_sig_ref);
+                        #[allow(clippy::collapsible_if)]
+                        if let Some(entry) = cache_ref.get(&path.to_string_lossy()) {
+                            if entry.modified == modified_time && entry.hash == hash {
+                                cached_entry = Some(entry.tokens);
                             }
                         }
+                    }
 
-                        if config_ref.redact {
-                            content = crate::utils::privacy::redact_content(&content);
+                    if config_ref.redact {
+                        content = crate::utils::privacy::redact_content(&content);
+                    }
+
+                    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                    let concepts = extract_concepts(&content, extension);
+
+                    match config_ref.compression {
+                        CompressionMode::Simple => {
+                            content = compress_content(&content);
                         }
-
-                        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                        let concepts = extract_concepts(&content, extension);
-
-                        match config_ref.compression {
-                            CompressionMode::Simple => {
-                                content = compress_content(&content);
-                            }
-                            CompressionMode::Smart => {
-                                content = compress_ast(&content, extension);
-                            }
-                            CompressionMode::None => {}
+                        CompressionMode::Smart => {
+                            content = compress_ast(&content, extension);
                         }
+                        CompressionMode::None => {}
+                    }
 
-                        if !concepts.is_empty() {
-                            let concept_str = concepts.join(", ");
-                            let (prefix, suffix) = match extension {
-                                "py" | "rb" | "sh" | "yaml" | "toml" | "dockerfile"
-                                | "makefile" => ("#", ""),
-                                "html" | "xml" | "md" => ("<!--", " -->"),
-                                _ => ("//", ""),
-                            };
-                            content = format!(
-                                "{} Concepts: {}{}\n{}",
-                                prefix, concept_str, suffix, content
-                            );
-                        }
-
-                        let count = if !config_ref.no_tokens {
-                            if let Some(tokens) = cached_entry {
-                                tokens
-                            } else if let Ok(c) = count_tokens(&content) {
-                                if modified_time > 0 {
-                                    let hash = crate::utils::cache::Cache::compute_hash(
-                                        &String::from_utf8_lossy(
-                                            &std_fs::read(path).unwrap_or_default(),
-                                        ),
-                                        config_sig_ref,
-                                    );
-                                    cache_ref.update(
-                                        path.to_string_lossy().to_string(),
-                                        crate::utils::cache::CacheEntry {
-                                            hash,
-                                            tokens: c,
-                                            modified: modified_time,
-                                        },
-                                    );
-                                }
-                                c
-                            } else {
-                                0
+                    if !concepts.is_empty() {
+                        let concept_str = concepts.join(", ");
+                        let (prefix, suffix) = match extension {
+                            "py" | "rb" | "sh" | "yaml" | "toml" | "dockerfile" | "makefile" => {
+                                ("#", "")
                             }
+                            "html" | "xml" | "md" => ("<!--", " -->"),
+                            _ => ("//", ""),
+                        };
+                        content = format!(
+                            "{} Concepts: {}{}\n{}",
+                            prefix, concept_str, suffix, content
+                        );
+                    }
+
+                    let count = if !config_ref.no_tokens {
+                        if let Some(tokens) = cached_entry {
+                            tokens
+                        } else if let Ok(c) = count_tokens(&content) {
+                            if modified_time > 0 {
+                                let hash = crate::utils::cache::Cache::compute_hash(
+                                    &String::from_utf8_lossy(
+                                        &std_fs::read(path).unwrap_or_default(),
+                                    ),
+                                    config_sig_ref,
+                                );
+                                cache_ref.update(
+                                    path.to_string_lossy().to_string(),
+                                    crate::utils::cache::CacheEntry {
+                                        hash,
+                                        tokens: c,
+                                        modified: modified_time,
+                                    },
+                                );
+                            }
+                            c
                         } else {
                             0
-                        };
-
-                        if count > 0 || !config_ref.no_tokens {
-                            let current =
-                                total_tokens_ref.fetch_add(count, Ordering::Relaxed) + count;
-                            notify_ref(ScanEvent::TokenCountUpdate(current));
                         }
+                    } else {
+                        0
+                    };
 
-                        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                        let summary = crate::utils::summary::summarize_content(&content, extension);
+                    if count > 0 || !config_ref.no_tokens {
+                        let current = total_tokens_ref.fetch_add(count, Ordering::Relaxed) + count;
+                        notify_ref(ScanEvent::TokenCountUpdate(current));
+                    }
 
-                        notify_ref(ScanEvent::FileProcessed(path.clone()));
-                        let _ =
-                            data_tx.send((index, Some((path.clone(), content, summary, count))));
+                    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                    let summary = crate::utils::summary::summarize_content(&content, extension);
+
+                    notify_ref(ScanEvent::FileProcessed(path.clone()));
+                    let _ = data_tx.send((index, Some((path.clone(), content, summary, count))));
                 });
             drop(data_tx);
         });

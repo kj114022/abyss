@@ -250,7 +250,8 @@ impl AppState {
                     self.preview_content = "[Binary or unsociable file]".to_string();
                 }
                 let ext = p.extension().unwrap_or_default().to_string_lossy();
-                self.preview_highlighted = crate::tui::highlight::highlight_code(&self.preview_content, &ext);
+                self.preview_highlighted =
+                    crate::tui::highlight::highlight_code(&self.preview_content, &ext);
             } else {
                 self.preview_content.clear();
                 self.preview_highlighted.clear();

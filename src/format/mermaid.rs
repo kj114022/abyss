@@ -153,22 +153,21 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
 
         for dirname in sorted_subdirs {
             if let Some(subdir_node) = node.subdirs.get(dirname) {
+                // Subgraph ID must be alphanumeric
+                // We can use a hash or just path with underscores.
+                // Let's generate a unique ID for the subgraph.
+                let full_sub_path = current_path.join(dirname);
+                // safe id
+                let sub_id = format!(
+                    "cluster_{}",
+                    full_sub_path
+                        .to_string_lossy()
+                        .replace(['/', '.', '-', ' '], "_")
+                );
 
-            // Subgraph ID must be alphanumeric
-            // We can use a hash or just path with underscores.
-            // Let's generate a unique ID for the subgraph.
-            let full_sub_path = current_path.join(dirname);
-            // safe id
-            let sub_id = format!(
-                "cluster_{}",
-                full_sub_path
-                    .to_string_lossy()
-                    .replace(['/', '.', '-', ' '], "_")
-            );
-
-            lines.push(format!("{}subgraph {} [\"{}\"]", spaces, sub_id, dirname));
-            write_tree(subdir_node, &full_sub_path, lines, path_to_id, indent + 2);
-            lines.push(format!("{}end", spaces));
+                lines.push(format!("{}subgraph {} [\"{}\"]", spaces, sub_id, dirname));
+                write_tree(subdir_node, &full_sub_path, lines, path_to_id, indent + 2);
+                lines.push(format!("{}end", spaces));
             }
         }
     }

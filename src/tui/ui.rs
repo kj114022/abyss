@@ -230,7 +230,7 @@ fn draw_preview_pane(f: &mut Frame, state: &mut AppState, area: Rect) {
     if let Some(path) = &state.preview_path {
         // let ext = path.extension().unwrap_or_default().to_string_lossy();
         // let highlighted = highlight_code(&state.preview_content, &ext);
-        
+
         let p = Paragraph::new(state.preview_highlighted.clone())
             .block(block.title(format!(
                 "Preview: {}",

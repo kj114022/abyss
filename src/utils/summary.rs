@@ -155,8 +155,10 @@ pub fn summarize_content(content: &str, extension: &str) -> Option<String> {
 fn summarize_content_regex(content: &str) -> Option<String> {
     use regex::Regex;
     // Compile regexes once or lazily? For now compiled inside.
-    let re_class = Regex::new(r"^\s*(class|struct|module|interface|trait)\s+([a-zA-Z0-9_]+)").ok()?;
-    let re_fn = Regex::new(r"^\s*(function|def|fn|func|public\s+sub|sub)\s+([a-zA-Z0-9_]+)").ok()?;
+    let re_class =
+        Regex::new(r"^\s*(class|struct|module|interface|trait)\s+([a-zA-Z0-9_]+)").ok()?;
+    let re_fn =
+        Regex::new(r"^\s*(function|def|fn|func|public\s+sub|sub)\s+([a-zA-Z0-9_]+)").ok()?;
 
     let mut classes = Vec::new();
     let mut functions = Vec::new();
@@ -167,29 +169,39 @@ fn summarize_content_regex(content: &str) -> Option<String> {
                 classes.push(name.as_str());
             }
         } else if let Some(caps) = re_fn.captures(line) {
-             #[allow(clippy::collapsible_if)]
-             if let Some(name) = caps.get(2) {
+            #[allow(clippy::collapsible_if)]
+            if let Some(name) = caps.get(2) {
                 functions.push(name.as_str());
             }
         }
     }
 
-     let format_list = |label: &str, mut items: Vec<&str>| -> String {
+    let format_list = |label: &str, mut items: Vec<&str>| -> String {
         items.sort();
         items.dedup();
-        if items.is_empty() { return String::new(); }
+        if items.is_empty() {
+            return String::new();
+        }
         let count = items.len();
         let display: Vec<_> = items.into_iter().take(3).collect();
         let mut s = format!("{}: {}", label, display.join(", "));
-        if count > 3 { s.push_str(&format!(" (+{})", count - 3)); }
+        if count > 3 {
+            s.push_str(&format!(" (+{})", count - 3));
+        }
         s
     };
 
     let mut parts = Vec::new();
-    if !classes.is_empty() { parts.push(format_list("Classes/Modules", classes)); }
-    if !functions.is_empty() { parts.push(format_list("Functions", functions)); }
+    if !classes.is_empty() {
+        parts.push(format_list("Classes/Modules", classes));
+    }
+    if !functions.is_empty() {
+        parts.push(format_list("Functions", functions));
+    }
 
-    if parts.is_empty() { return None; }
+    if parts.is_empty() {
+        return None;
+    }
     Some(parts.join("; ") + " (Heuristic)")
 }
 

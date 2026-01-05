@@ -176,10 +176,13 @@ mod tests {
 
         let mut scores = std::collections::HashMap::new();
         for path in &paths {
-            scores.insert(path.clone(), FileScore {
-                heuristic: heuristic_score(path),
-                ..Default::default()
-            });
+            scores.insert(
+                path.clone(),
+                FileScore {
+                    heuristic: heuristic_score(path),
+                    ..Default::default()
+                },
+            );
         }
 
         sort_paths(&mut paths, &scores);
@@ -209,7 +212,6 @@ mod tests {
 
     #[test]
     fn test_churn_boost() {
-
         let mut paths = vec![
             PathBuf::from("regular_core.rs"), // Score 600
             PathBuf::from("churned_util.rs"), // Score 400 + Boost
