@@ -5,7 +5,7 @@ use crate::utils::clipboard::copy_to_clipboard;
 use crate::utils::compression::compress_content;
 use crate::utils::concepts::extract_concepts;
 use crate::utils::git_stats::{get_diff_files, get_git_stats};
-use crate::utils::tokens::{count_tokens, estimate_cost};
+use crate::utils::tokens::count_tokens;
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
 use rayon::prelude::*;
@@ -49,7 +49,7 @@ pub fn run(config: AbyssConfig) -> Result<()> {
         }
     });
 
-    let mut total_tokens = 0;
+
 
     for event in rx {
         match event {
@@ -69,7 +69,7 @@ pub fn run(config: AbyssConfig) -> Result<()> {
                 }
             }
             ScanEvent::TokenCountUpdate(t) => {
-                total_tokens = t;
+
                 if config.verbose {
                     println!("Total tokens: {}", t)
                 }
@@ -79,13 +79,7 @@ pub fn run(config: AbyssConfig) -> Result<()> {
                     println!("{}", msg)
                 }
 
-                // Print Cost Estimate
-                if !config.no_tokens && total_tokens > 0 {
-                    println!("\nEstimated Cost (Input):");
-                    for estimate in estimate_cost(total_tokens) {
-                        println!("  - {}: ${:.4}", estimate.model_name, estimate.cost_usd);
-                    }
-                }
+
             }
             ScanEvent::Error(e) => eprintln!("Error: {}", e),
         }
