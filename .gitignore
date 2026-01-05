@@ -42,3 +42,8 @@ tmp/
 .env
 secret.env
 .abyss-cache.json
+
+# Output files
+abyss-output.xml
+repomix-output.xml
+*.output.xml
