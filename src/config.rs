@@ -67,20 +67,36 @@ pub struct AbyssConfig {
 }
 
 impl AbyssConfig {
-    /// Validates the configuration, ensuring the path exists (for local scans).
+    /// Validates the configuration, ensuring the path exists and patterns are valid.
     pub fn validate(&self) -> anyhow::Result<()> {
         if !self.path.exists() && !self.is_remote {
             anyhow::bail!("Path does not exist: {:?}", self.path);
         }
+
+        // Validate glob patterns
+        for pattern in &self.ignore_patterns {
+            glob::Pattern::new(pattern)
+                .map_err(|e| anyhow::anyhow!("Invalid ignore pattern '{}': {}", pattern, e))?;
+        }
+        for pattern in &self.include_patterns {
+            glob::Pattern::new(pattern)
+                .map_err(|e| anyhow::anyhow!("Invalid include pattern '{}': {}", pattern, e))?;
+        }
+
         Ok(())
     }
 
     /// Attempts to load configuration from `abyss.toml` in the current directory.
-    /// Attempts to load configuration from `abyss.toml` in the current directory.
+    /// Returns None if file doesn't exist, Err on parse failure.
     pub fn load_from_file() -> Option<Self> {
-        std::fs::read_to_string("abyss.toml")
-            .ok()
-            .and_then(|content| toml::from_str(&content).ok())
+        let content = std::fs::read_to_string("abyss.toml").ok()?;
+        match toml::from_str(&content) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                eprintln!("Warning: Failed to parse abyss.toml: {}", e);
+                None
+            }
+        }
     }
 }
 

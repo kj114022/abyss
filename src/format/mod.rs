@@ -14,6 +14,15 @@ pub use self::xml::*;
 
 use crate::config::OutputFormat;
 
+/// Escapes special XML characters for use in attribute values
+fn escape_xml_attr(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 #[derive(Debug, Clone)]
 pub struct RepoOverview {
     pub purpose: Option<String>,
@@ -148,7 +157,7 @@ pub mod xml {
                     output,
                     "<file path=\"{}\" summary=\"{}\">",
                     relative.display(),
-                    s.escape_default()
+                    escape_xml_attr(s)
                 )?;
             } else {
                 writeln!(output, "<file path=\"{}\">", relative.display())?;

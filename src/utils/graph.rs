@@ -81,24 +81,30 @@ impl DependencyGraph {
         for _ in 0..iterations {
             let mut new_scores = HashMap::new();
 
+            // Calculate total sink rank (nodes with no outgoing edges)
+            let mut sink_rank = 0.0;
+            for node in &self.nodes {
+                if !self.edges.contains_key(node) || self.edges.get(node).is_some_and(|e| e.is_empty()) {
+                    sink_rank += scores.get(node).unwrap_or(&0.0);
+                }
+            }
+
+            // Each node gets an equal share of the sink rank
+            let sink_contribution = sink_rank / num_nodes as f64;
+
             for node in &self.nodes {
                 let mut incoming_score_sum = 0.0;
 
                 if let Some(voters) = incoming.get(node) {
                     for voter in voters {
                         let voter_score = scores.get(voter).unwrap_or(&0.0);
-                        let voter_out_degree = out_degree.get(voter).unwrap_or(&1); // Should match targets.len()
+                        let voter_out_degree = out_degree.get(voter).unwrap_or(&1);
                         incoming_score_sum += *voter_score / *voter_out_degree as f64;
                     }
                 }
 
-                // Add sink logic? If a node has no outgoing edges, it's a sink.
-                // Standard PageRank distributes sink rank to all nodes.
-                // For simplified version, we ignore sinks or assume self-loop?
-                // Let's stick to simple version first.
-
-                let new_score =
-                    (1.0 - damping_factor) / num_nodes as f64 + damping_factor * incoming_score_sum;
+                let new_score = (1.0 - damping_factor) / num_nodes as f64
+                    + damping_factor * (incoming_score_sum + sink_contribution);
                 new_scores.insert(node.clone(), new_score);
             }
             scores = new_scores;

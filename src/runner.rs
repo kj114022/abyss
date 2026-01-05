@@ -1,5 +1,5 @@
 use crate::config::{AbyssConfig, CompressionMode};
-use crate::fs::walk_directory;
+
 use crate::utils::ast::compress_ast;
 use crate::utils::clipboard::copy_to_clipboard;
 use crate::utils::compression::compress_content;
@@ -236,8 +236,14 @@ pub fn discover_files(
         .canonicalize()
         .with_context(|| format!("Failed to find directory: {:?}", config.path))?;
 
-    // 1. Walk directory
-    let mut paths = walk_directory(&root_path, &config.ignore_patterns)?;
+    // 1. Walk directory with full config
+    let walk_config = crate::fs::WalkConfig {
+        ignore_patterns: &config.ignore_patterns,
+        include_patterns: &config.include_patterns,
+        max_depth: config.max_depth,
+        max_file_size: config.max_file_size,
+    };
+    let mut paths = crate::fs::walk_directory_with_config(&root_path, walk_config)?;
     notify(ScanEvent::FilesFound(paths.len()));
 
     // 2. Filter by Diff
