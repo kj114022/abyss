@@ -18,6 +18,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
+use std::process::Command;
 use std::thread;
 use std::{io, time::Duration};
 
@@ -50,7 +51,7 @@ pub fn start_tui(mut config: AbyssConfig) -> Result<()> {
 
         thread::spawn(
             move || match discover_files(&config_clone, Some(tx_clone.clone())) {
-                Ok((paths, root)) => {
+                Ok((paths, root, _dropped)) => {
                     let _ = result_tx.send((paths, root));
                 }
                 Err(e) => {
@@ -106,83 +107,180 @@ fn run_app<B: ratatui::backend::Backend>(
 
         #[allow(clippy::collapsible_if)]
         if event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                // Global keys
-                match key.code {
-                    KeyCode::Char('q') => return Ok(TuiAction::Quit),
-                    KeyCode::Char('h') => state.show_help = !state.show_help,
-                    KeyCode::Tab => state.next_tab(),
-                    _ => {}
-                }
+            match event::read()? {
+                Event::Key(key) => {
+                    if state.is_searching {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Enter => {
+                                state.is_searching = false;
+                            }
+                            KeyCode::Backspace => {
+                                state.search_query.pop();
+                                if let Some(tree) = &mut state.file_tree {
+                                     let query = state.search_query.to_lowercase();
+                                     tree.filter(&query);
+                                }
+                            },
 
-                if state.active_tab == 1 {
-                    // Settings Tab Input
-                    match key.code {
-                        KeyCode::Down => state.next_config_item(),
-                        KeyCode::Up => state.previous_config_item(),
-                        KeyCode::Enter | KeyCode::Char(' ') => state.toggle_config_bool(),
-                        KeyCode::Right => state.increase_config_value(),
-                        KeyCode::Left => state.decrease_config_value(),
-                        KeyCode::Char('r') => {
-                            // Trigger Rescan
-                            return Ok(TuiAction::Rescan(Box::new(state.config.clone())));
+                            KeyCode::Char('a') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                                // Select All Visible
+                                if let Some(tree) = &mut state.file_tree {
+                                    tree.select_all_visible(true);
+                                }
+                            },
+                            KeyCode::Char(c) => {
+                                state.search_query.push(c);
+                                if let Some(tree) = &mut state.file_tree {
+                                     let query = state.search_query.to_lowercase();
+                                     tree.filter(&query);
+                                }
+                            },
+                            _ => {}
                         }
-                        _ => {}
-                    }
-                } else if state.active_tab == 0 {
-                    // Files Tab Input
-                    match key.code {
-                        KeyCode::Down => state.next_file(),
-                        KeyCode::Up => state.previous_file(),
-                        KeyCode::Esc => state.unselect(),
-                        KeyCode::Char(' ') => {
-                            state.toggle_selection();
-                        }
-                        KeyCode::Right => {
-                            state.toggle_expand();
-                        }
-                        KeyCode::Left => {
-                            state.toggle_expand();
-                        }
-                        KeyCode::Enter => {
-                            #[allow(clippy::collapsible_if)]
-                            if state.step == AppStep::FileSelection {
-                                if let Some((_, root)) = &pending_discovery {
-                                    // Transition to Processing
-                                    state.step = AppStep::Processing;
-                                    state.scanned_files.clear();
-                                    state.status_message = "PROCESSING...".to_string();
+                    } else {
+                        // Global keys
+                        match key.code {
+                            KeyCode::Char('q') | KeyCode::Esc => return Ok(TuiAction::Quit),
+                            KeyCode::Char('?') => state.show_help = !state.show_help,
+                            KeyCode::Char('t') => {
+                                state.active_tab = 0; // Ensure Files tab
+                                state.is_searching = true;
+                                state.search_query.clear();
+                                if let Some(tree) = &mut state.file_tree {
+                                    tree.filter("");
+                                }
+                            },
+                            KeyCode::Tab => state.next_tab(),
+                            KeyCode::Char('o') => {
+                                if state.step == AppStep::Done {
+                                    let path = state.config.output.display().to_string();
+                                    #[cfg(target_os = "macos")]
+                                    let _ = Command::new("open").arg(&path).spawn();
+                                    #[cfg(target_os = "linux")]
+                                    let _ = Command::new("xdg-open").arg(&path).spawn();
+                                    #[cfg(target_os = "windows")]
+                                    let _ = Command::new("cmd")
+                                        .arg("/C")
+                                        .arg("start")
+                                        .arg(&path)
+                                        .spawn();
 
-                                    // Filter selected paths from tree
-                                    let selected_paths: Vec<PathBuf> =
-                                        if let Some(tree) = &state.file_tree {
-                                            tree.collect_selected_paths()
-                                        } else {
-                                            Vec::new()
-                                        };
-
-                                    state.total_files = selected_paths.len();
-
-                                    // Spawn processing thread
-                                    let root_clone = root.clone();
-                                    let config_clone = state.config.clone(); // Use the edited config!
-                                    let tx_clone = tx.clone();
-                                    thread::spawn(move || {
-                                        if let Err(e) = process_files(
-                                            selected_paths,
-                                            root_clone,
-                                            config_clone,
-                                            Some(tx_clone.clone()),
-                                        ) {
-                                            let _ = tx_clone.send(ScanEvent::Error(e.to_string()));
-                                        }
-                                    });
+                                    state.status_message =
+                                        "Opened output file in default app".to_string();
                                 }
                             }
+                            _ => {}
                         }
-                        _ => {}
+
+                        if state.active_tab == 1 {
+                            // Settings Tab Input
+                            match key.code {
+                                KeyCode::Down | KeyCode::Char('j') => state.next_config_item(),
+                                KeyCode::Up | KeyCode::Char('k') => state.previous_config_item(),
+                                KeyCode::Enter | KeyCode::Char(' ') => state.toggle_config_bool(),
+                                KeyCode::Right | KeyCode::Char('l') => state.increase_config_value(),
+                                KeyCode::Left | KeyCode::Char('h') => state.decrease_config_value(),
+                                KeyCode::Char('r') => {
+                                    // Trigger Rescan
+                                    return Ok(TuiAction::Rescan(Box::new(state.config.clone())));
+                                }
+                                _ => {}
+                            }
+                        } else if state.active_tab == 0 {
+                            // Files Tab Input
+                            match key.code {
+                                KeyCode::Char('/') => {
+                                    state.is_searching = true;
+                                    state.search_query.clear();
+                                    if let Some(tree) = &mut state.file_tree {
+                                        tree.filter(""); // Reset visibility
+                                    }
+                                }
+                                KeyCode::Down | KeyCode::Char('j') => state.next_file(),
+                                KeyCode::Up | KeyCode::Char('k') => state.previous_file(),
+                                KeyCode::Esc => {
+                                    if !state.search_query.is_empty() {
+                                        state.search_query.clear();
+                                        if let Some(tree) = &mut state.file_tree {
+                                            tree.filter("");
+                                        }
+                                    } else {
+                                        state.unselect();
+                                    }
+                                }
+                                KeyCode::Char(' ') => {
+                                    state.toggle_selection();
+                                }
+                                KeyCode::Right | KeyCode::Char('l') => {
+                                    state.toggle_expand();
+                                }
+                                KeyCode::Left | KeyCode::Char('h') => {
+                                    state.toggle_expand();
+                                }
+                                KeyCode::Enter => {
+                                    #[allow(clippy::collapsible_if)]
+                                    if state.step == AppStep::FileSelection {
+                                        if let Some((_, root)) = &pending_discovery {
+                                            // Transition to Processing
+                                            state.step = AppStep::Processing;
+                                            state.scanned_files.clear();
+                                            state.status_message = "PROCESSING...".to_string();
+
+                                            // Filter selected paths from tree
+                                            let selected_paths: Vec<PathBuf> =
+                                                if let Some(tree) = &state.file_tree {
+                                                    tree.collect_selected_paths()
+                                                } else {
+                                                    Vec::new()
+                                                };
+
+                                            state.total_files = selected_paths.len();
+
+                                            // Spawn processing thread
+                                            let root_clone = root.clone();
+                                            let config_clone = state.config.clone();
+                                            let tx_clone = tx.clone();
+                                            thread::spawn(move || {
+                                                if let Err(e) = process_files(
+                                                    selected_paths,
+                                                    vec![],
+                                                    root_clone,
+                                                    config_clone,
+                                                    Some(tx_clone.clone()),
+                                                ) {
+                                                    let _ =
+                                                        tx_clone.send(ScanEvent::Error(e.to_string()));
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 }
+                Event::Mouse(mouse) => {
+                     use crossterm::event::MouseEventKind;
+                     match mouse.kind {
+                         MouseEventKind::ScrollDown => {
+                             if state.active_tab == 0 {
+                                 state.next_file();
+                             } else {
+                                 state.next_config_item();
+                             }
+                         }
+                         MouseEventKind::ScrollUp => {
+                             if state.active_tab == 0 {
+                                 state.previous_file();
+                             } else {
+                                 state.previous_config_item();
+                             }
+                         }
+                         _ => {}
+                     }
+                }
+                _ => {}
             }
         }
 
@@ -190,8 +288,7 @@ fn run_app<B: ratatui::backend::Backend>(
         if let Ok((paths, root)) = result_rx.try_recv() {
             state.step = AppStep::FileSelection;
             state.status_message =
-                "SELECT FILES (Arrows: Expand/Collapse/Nav, Space: Toggle, Enter: Process)"
-                    .to_string();
+                "SELECT FILES (Nav: Arrow or j/k/h/l, Space: Toggle, Enter: Process)".to_string();
 
             state.discovered_paths = paths.clone();
             state.file_tree = Some(build_tree(&root, paths));
@@ -227,7 +324,7 @@ fn run_app<B: ratatui::backend::Backend>(
                     // state.step = AppStep::Done; // Maybe keep it as Processing/Done?
                     // Previous code set app.step = Done.
                     state.step = AppStep::Done;
-                    state.status_message = "TASK COMPLETE".to_string();
+                    state.status_message = "TASK COMPLETE (Press 'o' to open)".to_string();
                     state.add_log(msg);
                 }
                 ScanEvent::Error(e) => {

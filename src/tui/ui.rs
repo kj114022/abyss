@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap},
 };
 
-use crate::tui::highlight::highlight_code;
+// use crate::tui::highlight::highlight_code;
 use ratatui::widgets::{BorderType, Tabs};
 
 pub fn draw_ui(f: &mut Frame, state: &mut AppState) {
@@ -85,13 +85,13 @@ fn draw_config_form(f: &mut Frame, state: &mut AppState, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title("Configuration (Arrows: Nav/Edit, Space: Toggle)"),
+                .border_type(BorderType::Thick)
+                .title("Configuration (Nav: Arrows or h/j/k/l, Space: Toggle)"),
         )
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
-                .fg(Color::Yellow)
+                .bg(Color::Rgb(30, 30, 30))
+                .fg(Color::Rgb(255, 215, 0)) // Gold
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -108,6 +108,41 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
     let tree_area = chunks[0];
     let preview_area = chunks[1];
 
+    // Split tree area for Search Bar if needed
+    let (search_rect, list_rect) = if state.is_searching || !state.search_query.is_empty() {
+        let v_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(3), Constraint::Length(3)].as_ref()) // List first, Search at bottom? Or Top?
+            // Let's put Search at top for "active filtering" feel
+            .constraints([Constraint::Length(3), Constraint::Min(3)].as_ref())
+            .split(tree_area);
+        (Some(v_chunks[0]), v_chunks[1])
+    } else {
+        (None, tree_area)
+    };
+
+    if let Some(area) = search_rect {
+        let query_text = if state.search_query.is_empty() {
+            Span::styled("Type to filter...", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::raw(&state.search_query)
+        };
+
+        let border_style = if state.is_searching {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default()
+        };
+
+        let search_block = Block::default()
+            .borders(Borders::ALL)
+            .title("Filter")
+            .border_style(border_style);
+
+        let input = Paragraph::new(query_text).block(search_block);
+        f.render_widget(input, area);
+    }
+
     let tree = match &state.file_tree {
         Some(t) => t,
         None => return,
@@ -118,7 +153,7 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
 
     // Determine offset for scrolling
     // Simple scrolling logic: Ensure tree_index is visible
-    let list_height = tree_area.height as usize;
+    let list_height = list_rect.height as usize;
     if list_height == 0 {
         return;
     }
@@ -175,12 +210,12 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
+                .border_type(BorderType::Thick)
                 .title("File Tree"),
         )
         .highlight_style(Style::default());
 
-    f.render_widget(list, tree_area);
+    f.render_widget(list, list_rect);
 
     // Preview Pane
     draw_preview_pane(f, state, preview_area);
@@ -189,14 +224,14 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
 fn draw_preview_pane(f: &mut Frame, state: &mut AppState, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(BorderType::Thick)
         .title("Preview");
 
     if let Some(path) = &state.preview_path {
-        let ext = path.extension().unwrap_or_default().to_string_lossy();
-        let highlighted = highlight_code(&state.preview_content, &ext);
-
-        let p = Paragraph::new(highlighted)
+        // let ext = path.extension().unwrap_or_default().to_string_lossy();
+        // let highlighted = highlight_code(&state.preview_content, &ext);
+        
+        let p = Paragraph::new(state.preview_highlighted.clone())
             .block(block.title(format!(
                 "Preview: {}",
                 path.file_name().unwrap_or_default().to_string_lossy()
@@ -330,11 +365,12 @@ fn draw_help_overlay(f: &mut Frame) {
         Line::from("Selection Mode:"),
         Line::from("  Space: Toggle file selection"),
         Line::from("  Enter: Confirm and start processing"),
-        Line::from("  Up/Down: Navigate list"),
+        Line::from("  Arrows or j/k: Navigate list"),
+        Line::from("  Left/Right or h/l: Collapse/Expand"),
         Line::from(""),
         Line::from("General:"),
         Line::from("  q: Quit"),
-        Line::from("  h: Toggle Help"),
+        Line::from("  ?: Toggle Help"),
     ];
 
     let p = Paragraph::new(text).block(block).wrap(Wrap { trim: true });

@@ -7,6 +7,7 @@ pub struct FileNode {
     pub is_dir: bool,
     pub is_expanded: bool,
     pub is_selected: bool,
+    pub is_visible: bool, // For search filtering
     pub children: Vec<FileNode>,
     pub depth: usize,
 }
@@ -25,6 +26,7 @@ impl FileNode {
             is_dir,
             is_expanded: true, // Auto-expand by default for now
             is_selected: true,
+            is_visible: true,
             children: Vec::new(),
             depth,
         }
@@ -51,8 +53,49 @@ impl FileNode {
         }
     }
 
+    pub fn filter(&mut self, query: &str) -> bool {
+        if query.is_empty() {
+            self.is_visible = true;
+            for child in &mut self.children {
+                child.filter(query);
+            }
+            return true;
+        }
+
+        let matches_self = self.name.to_lowercase().contains(&query.to_lowercase());
+        let mut any_child_matches = false;
+
+        for child in &mut self.children {
+            if child.filter(query) {
+                any_child_matches = true;
+            }
+        }
+
+        // Visible if matches self OR any child matches (so we can reach the child)
+        self.is_visible = matches_self || any_child_matches;
+
+        // Auto-expand if visible due to children or self match
+        if self.is_visible {
+            self.is_expanded = true;
+        }
+
+        self.is_visible
+    }
+
+    pub fn select_all_visible(&mut self, selected: bool) {
+        if self.is_visible {
+            self.is_selected = selected;
+        }
+        for child in &mut self.children {
+            child.select_all_visible(selected);
+        }
+    }
+
     // Flatten visible nodes for rendering list
     pub fn flatten(&self) -> Vec<&FileNode> {
+        if !self.is_visible {
+            return Vec::new();
+        }
         let mut result = Vec::new();
         result.push(self);
 
@@ -249,7 +292,7 @@ mod tests {
             PathBuf::from("root/src/lib.rs"),
         ];
 
-        let mut tree = build_tree(&root, paths);
+        let tree = build_tree(&root, paths);
 
         assert_eq!(tree.children.len(), 2); // file1.rs, src/
 
