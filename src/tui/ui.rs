@@ -7,8 +7,36 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap},
 };
 
-// use crate::tui::highlight::highlight_code;
 use ratatui::widgets::{BorderType, Tabs};
+
+// Catppuccin Mocha color palette
+const MAUVE: Color = Color::Rgb(203, 166, 247);
+const TEAL: Color = Color::Rgb(148, 226, 213);
+const PEACH: Color = Color::Rgb(250, 179, 135);
+const GREEN: Color = Color::Rgb(166, 227, 161);
+const YELLOW: Color = Color::Rgb(249, 226, 175);
+const RED: Color = Color::Rgb(243, 139, 168);
+const SURFACE0: Color = Color::Rgb(49, 50, 68);
+const TEXT: Color = Color::Rgb(205, 214, 244);
+
+/// Returns file type icon based on extension
+fn file_icon(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("rs") => "",
+        Some("py") => "",
+        Some("js" | "jsx" | "ts" | "tsx") => "",
+        Some("go") => "",
+        Some("c" | "cpp" | "h" | "hpp") => "",
+        Some("md" | "txt") => "",
+        Some("toml" | "yaml" | "yml" | "json") => "",
+        Some("html" | "css" | "scss") => "",
+        Some("sh" | "bash" | "zsh") => "",
+        Some("lock") => "",
+        _ if path.file_name().map_or(false, |n| n.to_str().map_or(false, |s| s.starts_with('.'))) => "",
+        _ => "",
+    }
+}
+
 
 pub fn draw_ui(f: &mut Frame, state: &mut AppState) {
     let chunks = Layout::default()
@@ -176,30 +204,32 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
             // Indentation
             let indent = " ".repeat(node.depth * 2);
 
-            // Icon
+            // Icon with file type
             let icon = if node.is_dir {
-                if node.is_expanded { "v " } else { "> " }
+                if node.is_expanded { " " } else { " " }
             } else {
-                "  "
+                file_icon(std::path::Path::new(&node.name))
             };
 
-            // Checkbox
-            let checkbox = if node.is_selected { "[x] " } else { "[ ] " };
+            // Checkbox with color
+            let checkbox = if node.is_selected { " " } else { " " };
 
             // Name
             let name = &node.name;
 
-            let content = format!("{}{}{}{}", indent, icon, checkbox, name);
+            let content = format!("{}{} {}{}", indent, icon, checkbox, name);
 
             let style = if is_selected_row {
                 Style::default()
-                    .bg(Color::DarkGray)
-                    .fg(Color::White)
+                    .bg(SURFACE0)
+                    .fg(TEXT)
                     .add_modifier(Modifier::BOLD)
             } else if node.is_selected {
-                Style::default().fg(Color::Green)
+                Style::default().fg(GREEN)
+            } else if node.is_dir {
+                Style::default().fg(MAUVE)
             } else {
-                Style::default().fg(Color::Gray)
+                Style::default().fg(TEXT)
             };
 
             ListItem::new(content).style(style)
