@@ -110,6 +110,10 @@ struct Args {
     /// Generate shell completions (bash, zsh, fish, powershell)
     #[arg(long, value_name = "SHELL")]
     completions: Option<String>,
+
+    /// LLM preset (gpt4, gpt3, claude, gemini) - sets max_tokens automatically
+    #[arg(long, value_name = "MODEL")]
+    preset: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -193,6 +197,31 @@ fn main() -> Result<()> {
 
     if let Some(mt) = args.max_tokens {
         config.max_tokens = Some(mt);
+    }
+
+    // LLM preset handling
+    if let Some(preset) = args.preset {
+        let tokens = match preset.to_lowercase().as_str() {
+            "gpt4" | "gpt-4" | "gpt4o" => 128_000,
+            "gpt3" | "gpt-3.5" | "gpt35" => 16_000,
+            "claude" | "claude3" | "sonnet" => 200_000,
+            "gemini" | "gemini-pro" => 1_000_000,
+            "llama" | "llama3" => 8_000,
+            _ => {
+                eprintln!("Unknown preset: {}. Using gpt4 default.", preset);
+                128_000
+            }
+        };
+        config.max_tokens = Some(tokens);
+    }
+
+    // Environment variable fallback
+    if config.max_tokens.is_none() {
+        if let Ok(val) = std::env::var("ABYSS_MAX_TOKENS") {
+            if let Ok(tokens) = val.parse::<usize>() {
+                config.max_tokens = Some(tokens);
+            }
+        }
     }
 
     if args.graph {
