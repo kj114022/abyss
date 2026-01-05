@@ -106,10 +106,36 @@ struct Args {
     /// Enable dependency graph generation
     #[arg(long)]
     graph: bool,
+
+    /// Generate shell completions (bash, zsh, fish, powershell)
+    #[arg(long, value_name = "SHELL")]
+    completions: Option<String>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    // Handle completions generation early exit
+    if let Some(shell) = &args.completions {
+        use clap::CommandFactory;
+        use clap_complete::{generate, Shell};
+        use std::io;
+
+        let shell = match shell.to_lowercase().as_str() {
+            "bash" => Shell::Bash,
+            "zsh" => Shell::Zsh,
+            "fish" => Shell::Fish,
+            "powershell" | "ps" => Shell::PowerShell,
+            _ => {
+                eprintln!("Unsupported shell: {}. Use: bash, zsh, fish, powershell", shell);
+                std::process::exit(1);
+            }
+        };
+
+        let mut cmd = Args::command();
+        generate(shell, &mut cmd, "abyss", &mut io::stdout());
+        return Ok(());
+    }
 
     // 1. Load from file or default
     let mut config = AbyssConfig::load_from_file().unwrap_or_default();

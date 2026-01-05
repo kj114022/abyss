@@ -39,6 +39,8 @@ pub enum ScanEvent {
 /// on the main thread to print progress if `verbose` is enabled. It handles the efficient
 /// traversal of directories, semantic ranking, compression, and output generation.
 pub fn run(config: AbyssConfig) -> Result<()> {
+    use indicatif::{ProgressBar, ProgressStyle};
+
     let (tx, rx) = crossbeam_channel::unbounded();
 
     // Spawn thread to run scan
@@ -49,39 +51,43 @@ pub fn run(config: AbyssConfig) -> Result<()> {
         }
     });
 
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"),
+    );
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
 
+    let mut total_files = 0;
+    let mut processed = 0;
 
     for event in rx {
         match event {
             ScanEvent::StartScanning => {
-                if config.verbose {
-                    println!("Scanning started...")
-                }
+                pb.set_message("Scanning...");
             }
             ScanEvent::FilesFound(n) => {
-                if config.verbose {
-                    println!("Found {} files.", n)
-                }
+                total_files = n;
+                pb.set_message(format!("Found {} files", n));
             }
-            ScanEvent::FileProcessed(p) => {
+            ScanEvent::FileProcessed(_) => {
+                processed += 1;
                 if config.verbose {
-                    println!("Processed: {:?}", p)
+                    pb.set_message(format!("[{}/{}] Processing...", processed, total_files));
                 }
             }
             ScanEvent::TokenCountUpdate(t) => {
-
-                if config.verbose {
-                    println!("Total tokens: {}", t)
-                }
+                pb.set_message(format!("{} tokens", t));
             }
             ScanEvent::Complete(msg) => {
-                if config.verbose {
-                    println!("{}", msg)
-                }
-
-
+                pb.finish_with_message(format!("Done: {}", msg));
             }
-            ScanEvent::Error(e) => eprintln!("Error: {}", e),
+            ScanEvent::Error(e) => {
+                pb.finish_and_clear();
+                eprintln!("Error: {}", e);
+            }
         }
     }
 
