@@ -1,6 +1,6 @@
 [package]
 name = "abyss"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2024"
 description = "High-performance repository packer for LLM context generation"
 authors = ["KJ"]

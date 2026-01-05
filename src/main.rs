@@ -25,7 +25,7 @@ impl From<CliOutputFormat> for OutputFormat {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version="1.0.0", about="The Ultimate Repository Packer (The Abyss)", long_about = None)]
+#[command(author, version, about="The Ultimate Repository Packer (The Abyss)", long_about = None)]
 struct Args {
     /// Directory or Remote URL to scan
     path: Option<String>,
