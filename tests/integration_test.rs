@@ -35,6 +35,8 @@ fn test_end_to_end_scan() -> anyhow::Result<()> {
         prompt: None,
         redact: false,
         diff: None,
+        max_tokens: None,
+        graph: false,
     };
 
     run(config)?;
@@ -78,6 +80,8 @@ fn test_compression_integration() -> anyhow::Result<()> {
         prompt: None,
         redact: false,
         diff: None,
+        max_tokens: None,
+        graph: false,
     };
 
     run(config)?;
@@ -114,6 +118,8 @@ fn test_prompt_integration() -> anyhow::Result<()> {
         prompt: Some("Analyze this code for bugs.".to_string()),
         redact: false,
         diff: None,
+        max_tokens: None,
+        graph: false,
     };
 
     run(config)?;

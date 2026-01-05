@@ -211,7 +211,7 @@ mod tests {
         let result = String::from_utf8(output).unwrap();
         assert!(result.contains("\"token_count\": 100"));
         assert!(result.contains("src/main.rs"));
-        assert!(result.contains("\"path\": \"src/main.rs\""));
-        assert!(result.contains("\"content\": \"fn main() {}\""));
+        assert!(result.contains("\"path\":\"src/main.rs\""));
+        assert!(result.contains("\"content\":\"fn main() {}\""));
     }
 }
