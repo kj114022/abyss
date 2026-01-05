@@ -1,7 +1,7 @@
 //! JSON output format for abyss
 
 use anyhow::Result;
-// use serde::Serialize;
+use serde::Serialize;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -15,6 +15,12 @@ impl Default for JsonFormatter {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(serde::Serialize)]
+struct FileEntry<'a> {
+    path: String,
+    content: &'a str,
 }
 
 impl JsonFormatter {
@@ -75,20 +81,17 @@ impl Formatter for JsonFormatter {
         self.first_file = false;
 
         let relative = path.strip_prefix(repo_root).unwrap_or(path);
-
-        // Manual JSON object construction for streaming
-        writeln!(output, "    {{")?;
-        writeln!(
-            output,
-            "      \"path\": {},",
-            serde_json::to_string(&relative.display().to_string())?
-        )?;
-        writeln!(
-            output,
-            "      \"content\": {}",
-            serde_json::to_string(content)?
-        )?;
-        write!(output, "    }}")?; // No comma here, footer or next file adds it
+        
+        // Use a temporary struct to ensure safe JSON encoding of the object
+        // We output objects one by one to support streaming large datasets (O(1) memory)
+        let entry = FileEntry {
+            path: relative.display().to_string(),
+            content,
+        };
+        
+        // Write the entry, removing the trailing newline from to_string to keep format tight
+        let json_line = serde_json::to_string(&entry)?;
+        write!(output, "    {}", json_line)?; 
 
         Ok(())
     }
