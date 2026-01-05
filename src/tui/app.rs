@@ -35,11 +35,16 @@ pub struct AppState {
     pub selection_list_state: ListState,
     pub preview_path: Option<PathBuf>,
     pub preview_content: String,
+    pub preview_highlighted: Vec<ratatui::text::Line<'static>>,
 
     // Config Mode
     pub active_tab: usize,
     pub config: AbyssConfig,
     pub config_list_state: ListState,
+
+    // Search
+    pub search_query: String,
+    pub is_searching: bool,
 }
 
 impl AppState {
@@ -65,10 +70,14 @@ impl AppState {
             selection_list_state: ListState::default(),
             preview_path: None,
             preview_content: String::new(),
+            preview_highlighted: Vec::new(),
 
             active_tab: 0, // 0 = Files, 1 = Settings
             config,
             config_list_state: ListState::default(),
+
+            search_query: String::new(),
+            is_searching: false,
         }
     }
 
@@ -240,8 +249,11 @@ impl AppState {
                 } else {
                     self.preview_content = "[Binary or unsociable file]".to_string();
                 }
+                let ext = p.extension().unwrap_or_default().to_string_lossy();
+                self.preview_highlighted = crate::tui::highlight::highlight_code(&self.preview_content, &ext);
             } else {
                 self.preview_content.clear();
+                self.preview_highlighted.clear();
             }
         }
     }
