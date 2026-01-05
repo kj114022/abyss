@@ -108,48 +108,10 @@ impl Formatter for JsonFormatter {
                 )?;
             }
             writeln!(output, "  ]")?;
-        } else {
-            // If dropped_files is empty, we must handle the trailing comma from "files": [ ... ]
-            // Actually, "files" array ends at `]` which is written above.
-            // But strict JSON doesn't allow trailing comma after the last property if strictly parsed?
-            // Wait, my write_header writes:
-            // "prompt": ...,
-            // "token_count": ...,
-            // "directory_structure": [ ... ],
-            // "files": [ ... ], <-- Trailing comma
-            // So we need another field or remove that comma.
-            // BUT, `write_directory_structure` does: `writeln!(output, "  \"files\": [")?;`
-            // And `write_file` adds commas between items.
-            // `write_footer` closes `]`.
-            // Then it needs to close the main object `}`.
-            // If I add "dropped_files", I need a comma after `]`.
-            // Wait, `write_directory_structure` does NOT put a comma after `files: [` opening.
-            // The items inside have commas.
-            // Closing `files` array: `writeln!(output, "  ]")?`.
-            // If I verify the previous code:
-            // `writeln!(output, "  ]")?;`
-            // `writeln!(output, "}}")?;`
-            // It seems `files` was the last element.
-            // Now `dropped_files` might be the last.
-            // So if `dropped` is not empty, I need a comma after `files` array close.
-            // But if `dropped` IS empty, I don't.
         }
-        // Actually, looking at `write_directory_structure`:
-        // `writeln!(output, "  ],")?;`  <-- Closes directory_structure with comma
-        // `writeln!(output, "  \"files\": [")?;`
 
-        // This means `files` is expected to be followed by something IF I add something.
-        // If I simply append "dropped_files", I need a comma after "files".
-        // BUT `write_footer` currently starts with `writeln!(output)?` then `writeln!(output, "  ]")?`.
-        // The `write_file` implementation handles inner commas.
-
-        // Let's rewrite `write_footer` carefully.
-
-        // If we have dropped files, we need to add a comma to the previous `files` array closer?
-        // No, the `files` array closing bracket `]` does not have a comma yet.
-
+        // Append dropped_files if present
         if !dropped.is_empty() {
-            // We need a comma after the files array
             write!(output, ",")?;
             writeln!(output, "\n  \"dropped_files\": [")?;
             for (i, path) in dropped.iter().enumerate() {

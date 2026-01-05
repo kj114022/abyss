@@ -27,39 +27,17 @@ pub fn redact_content(content: &str) -> String {
     // Redact Secrets
     for pattern in SECRET_PATTERNS.iter() {
         if let Some(_caps) = pattern.captures(&result) {
-            // We need to re-scan because replacement invalidates indices.
-            // Easiest is to use replace_all.
-            // But capture groups in replace_all replacement string is tricky if we want to preserve key.
-            // The Regex crate replace_all supports $name syntax.
-
-            // If the regex has a named group "secret", we want to obscure just that part.
-            // However, replace_all replaces the *entire match*.
-            // So our regex must match the whole context.
-
-            // For the generic pattern: we match key...value. We want to keep key, replace value.
-            // Let's use a simpler approach: replace the secret group with [REDACTED]
-
-            // Actually, regex::replace_all replaces the whole match.
-            // We need to construct the replacement.
-
-            // Let's iterate manually or simpler regexes?
-            // Simpler: Just rely on simple replacements for now.
-
-            // For "key": "secret", replace with "key": "[REDACTED]"
-            // The regex captures user intent.
+            // Replacement uses closure to preserve context while redacting secret value
         }
-
-        // Use replace_all with a closure? Regex crate supports this? Yes, replacing with reference.
-        // It's cleaner to just replace strictly defined patterns.
 
         result = pattern
             .replace_all(&result, |caps: &regex::Captures| {
-                // If "secret" group exists, preserve the full match but replace the secret part?
+                // If "secret" group exists, preserve the full match but replace the secret part
                 if let Some(m) = caps.name("secret") {
                     let full_match = caps.get(0).unwrap().as_str();
                     full_match.replace(m.as_str(), "[REDACTED]")
                 } else {
-                    // If no secret group (e.g. Private Key header), replace whole match
+                    // Replace whole match for patterns without secret group
                     "[REDACTED_SECRET]".to_string()
                 }
             })

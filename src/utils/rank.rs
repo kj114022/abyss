@@ -9,8 +9,7 @@ pub fn calculate_entropy(content: &str) -> f64 {
         return 0.0;
     }
 
-    // We can calculate char-based entropy or token-based.
-    // Char-based is faster and usually sufficient for code density.
+    // Char-based entropy: fast and sufficient for code density analysis
     let mut counts = [0usize; 256];
     let mut total = 0;
 
@@ -50,9 +49,7 @@ impl FileScore {
         // PageRank: 0.0-1.0 (approx, depends on N)
         // Entropy: 4.0-6.0 range usually for code
 
-        // Let's scale PageRank to be comparable to 0-100 range?
-        // Or normalize everything.
-        // Let's stick to adding bonuses.
+        // Combine all factors into final score
 
         let rank_bonus = self.pagerank * 1000.0; // Assume 0.01 PR -> 10 points
         let entropy_bonus = self.entropy * 10.0;

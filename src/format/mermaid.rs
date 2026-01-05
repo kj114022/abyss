@@ -33,11 +33,8 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
     // 2. Build Hierarchy (Directory Tree)
     // Map: Dir -> List of Files (that are nodes)
     // And Dir -> List of Subdirs
-    // Actually, we can just iterate sorted nodes and open/close subgraphs?
-    // Or simpler: Recursively build the structure.
-
-    // Let's organize paths by their directory structure relative to root.
-    let mut hierarchy: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new(); // Dir -> Files
+    // Build hierarchy: directory -> files mapping
+    let mut hierarchy: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
     let mut dirs: HashSet<PathBuf> = HashSet::new();
 
     for path in &sorted_nodes {
@@ -64,10 +61,7 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
         }
     }
 
-    // We need to nest subgraphs.
-    // e.g. subgraph src { subgraph utils { ... } }
-    // We need to walk the directory tree.
-    // Let's get all unique dirs and sort them.
+    // Sort directories for deterministic output
     let mut sorted_dirs: Vec<_> = dirs.into_iter().collect();
     sorted_dirs.sort();
 
@@ -85,8 +79,7 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
     //   List sub-directories (recurse)
     //   `end`
 
-    // To do this, we need a tree structure of dirs.
-    // Let's build a proper tree.
+    // Build directory tree structure
     #[derive(Default)]
     struct DirNode {
         files: Vec<PathBuf>,
@@ -153,11 +146,8 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
 
         for dirname in sorted_subdirs {
             if let Some(subdir_node) = node.subdirs.get(dirname) {
-                // Subgraph ID must be alphanumeric
-                // We can use a hash or just path with underscores.
-                // Let's generate a unique ID for the subgraph.
+                // Generate unique subgraph ID from path
                 let full_sub_path = current_path.join(dirname);
-                // safe id
                 let sub_id = format!(
                     "cluster_{}",
                     full_sub_path
@@ -174,17 +164,7 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
 
     write_tree(&tree, Path::new(""), &mut lines, &path_to_id, 4);
 
-    // 3. Edges
-    // We need to fetch edges from graph.
-    // Graph doesn't expose edges publicly directly as a map?
-    // We might need to add a getter to DependencyGraph or expose edges.
-    // Assuming `get_edges()` exists or `edges` field is public (it's not).
-    // The previous implementation utilized internal access or iterator?
-    // `to_mermaid` was INSIDE `DependencyGraph`.
-    // Now we are OUTSIDE.
-    // We need to update `DependencyGraph` to expose edges or methods.
-
-    // Let's assume we add `pub fn get_edges(&self) -> &HashMap<PathBuf, HashSet<PathBuf>>`
+    // Render edges using graph's exposed edge map
 
     let edges = graph.get_edges();
     let mut sorted_sources: Vec<_> = edges.keys().collect();

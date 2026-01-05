@@ -77,13 +77,7 @@ pub fn compress_ast(content: &str, extension: &str) -> String {
             let start = node.start_byte();
             let end = node.end_byte();
 
-            // Heuristic: Only compress if body > 50 chars? Or always?
-            // User wants to see interfaces. Empty body `{}` is fine.
-            // But if we replace `{ ... }` with `{ /* ... */ }` it's uniform.
-            // Let's replace the CONTENT of the block, keeping braces?
-            // Queries match the whole `block`.
-            // `block` in Rust includes `{` and `}`.
-            // So we replace the whole node with `{ /* ... */ }`.
+            // Replace entire block node with placeholder
 
             ranges_to_replace.push((start, end));
         }
@@ -91,43 +85,8 @@ pub fn compress_ast(content: &str, extension: &str) -> String {
 
     // Sort reverse to replace without offset issues
     ranges_to_replace.sort_by(|a, b| b.0.cmp(&a.0));
-    // Deduplicate (nested blocks? Query matches top level? Tree-sitter query might match nested.
-    // If we replace outer, inner is gone. That's fine.
-    // But if we replace inner first, then outer, we waste work.
-    // If we replace outer, we are good.
-    // We should ensure we don't do overlapping replacements.
-    // If we process in reverse start order?
-    // And check if end is within previous (which is "later" in code) processed range.
-    // No, reverse start order means we see (End of file) items first.
-    // (Start 100, End 200) -> processed.
-    // (Start 10, End 300) -> If this overlaps 100-200, it contains it.
-    // We should merge or skip contained.
-
-    // Simpler:
-    // tree-sitter matches might be nested.
-    // We want to collapse the *largest* functions?
-    // Actually, we usually want to collapse *implementations*.
-    // `function_item` body is the implementation.
-    // If there is a helper function *inside*, it gets collapsed with the outer one.
-    // So we should prioritize outermost.
-    // Top-down?
-    // But we need to replace strings.
-    // Let's filter ranges: if a range is contained in another, ignore it?
-    // Actually if we replace outer, inner doesn't matter.
-    // So we just take top-level matches?
-    // Tree-sitter query returns all.
-    // We can filter.
-
-    // Logic:
-    // 1. Sort by start byte ascending.
-    // 2. Iterate. If current range is inside previous range's end, skip it.
-    // But we need to replace from back.
-    // So:
-    // 1. Identify non-overlapping ranges (outermost prefered).
-    // 2. Sort those by start byte descending for replacement.
-
-    // Identifying outermost:
-    // Sort by start ASC, then end DESC (largest first).
+    // Sort by start ASC, end DESC to prefer outermost ranges
+    // Filter nested ranges: only keep non-overlapping outermost matches
     // If we pick one, we skip all subsequent that start before its end.
 
     // Implementation:
