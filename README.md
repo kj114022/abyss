@@ -25,6 +25,16 @@ Reduces token density without information loss:
 
 ## Installation
 
+### Via NPM (Recommended)
+Zero-setup execution using the proprietary binary wrapper.
+
+```bash
+npx abyss@latest
+# or
+npm install -g abyss-cli
+```
+
+### From Source
 Building from source requires a robust Rust toolchain.
 
 ```bash
