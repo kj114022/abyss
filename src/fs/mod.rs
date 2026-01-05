@@ -8,13 +8,9 @@ pub fn walk_directory(path: &Path, ignore_patterns: &[String]) -> Result<Vec<Pat
     // Add custom ignore patterns
     let mut override_builder = ignore::overrides::OverrideBuilder::new(path);
     for pattern in ignore_patterns {
-        // In override builder:
-        // - "pattern" means IGNORE "pattern"
-        // - "!pattern" means WHITELIST "pattern"
-        // Repomix/User input usually expects "glob to ignore".
-        // So we pass it directly.
-        // We might need to ensure valid glob.
-        override_builder.add(&format!("!{}", pattern))?;
+        // In override builder, passing the pattern string ignores it.
+        // We do NOT want to prefix with '!' unless we are whitelisting.
+        override_builder.add(pattern)?;
     }
     let overrides = override_builder.build()?;
 
@@ -22,6 +18,8 @@ pub fn walk_directory(path: &Path, ignore_patterns: &[String]) -> Result<Vec<Pat
 
     // Standard gitignore is on by default.
     builder.standard_filters(true);
+    // Allow hidden files (like .gitignore, .github)
+    builder.hidden(false);
 
     let walker = builder.build();
     let mut files = Vec::new();
@@ -71,6 +69,27 @@ mod tests {
 
         assert!(path_strs.contains(&"include.rs".to_string()));
         assert!(!path_strs.contains(&"exclude.env".to_string()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_finds_gitignore() -> Result<()> {
+        let temp_dir = TempDir::new()?;
+        let root = temp_dir.path();
+
+        File::create(root.join(".gitignore"))?;
+        File::create(root.join("normal.rs"))?;
+
+        // Should find .gitignore because we set hidden(false)
+        let paths = walk_directory(root, &[])?;
+        let path_strs: Vec<String> = paths
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+
+        assert!(path_strs.contains(&"normal.rs".to_string()));
+        assert!(path_strs.contains(&".gitignore".to_string()));
 
         Ok(())
     }
