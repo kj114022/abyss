@@ -1,4 +1,42 @@
+# Rust
 target/
+**/*.rs.bk
+
+# Apple
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+env/
+venv/
+
+# Abyss Output
+abyss-output.*
+*.xml
+*.json
+*.md
+dropped_files.txt
+prompt.txt
+
+# Misc
 dist/
-*.lock
+tmp/
+.env
+secret.env

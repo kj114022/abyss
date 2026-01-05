@@ -4,7 +4,7 @@ version = "1.0.0"
 edition = "2024"
 description = "High-performance repository packer for LLM context generation"
 authors = ["KJ"]
-license = "MIT"
+publish = false
 repository = "https://github.com/kj/abyss"
 readme = "README.md"
 keywords = ["llm", "context", "repository", "packer", "ai"]
@@ -43,3 +43,5 @@ md5 = "0.8.0"
 dashmap = { version = "5.5", features = ["serde"] }
 topological-sort = "0.2"
 syntect = "5.0"
+pdf-extract = "0.7"
+image = "0.24"

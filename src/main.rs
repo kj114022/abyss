@@ -98,6 +98,14 @@ struct Args {
     /// Scan only changed files relative to this Git reference (e.g. "main", "HEAD~1")
     #[arg(long)]
     diff: Option<String>,
+
+    /// Maximum tokens to include in output (e.g. 128000)
+    #[arg(long)]
+    max_tokens: Option<usize>,
+
+    /// Enable dependency graph generation
+    #[arg(long)]
+    graph: bool,
 }
 
 fn main() -> Result<()> {
@@ -155,6 +163,14 @@ fn main() -> Result<()> {
     // Diff mode
     if let Some(d) = args.diff {
         config.diff = Some(d);
+    }
+
+    if let Some(mt) = args.max_tokens {
+        config.max_tokens = Some(mt);
+    }
+
+    if args.graph {
+        config.graph = true;
     }
 
     // Compression Logic merge

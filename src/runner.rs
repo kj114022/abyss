@@ -1,13 +1,10 @@
 use crate::config::{AbyssConfig, CompressionMode};
-// use crate::format::{write_directory_structure, write_file, write_footer, write_header};
 use crate::fs::walk_directory;
 use crate::utils::ast::compress_ast;
 use crate::utils::clipboard::copy_to_clipboard;
 use crate::utils::compression::compress_content;
 use crate::utils::concepts::extract_concepts;
-use crate::utils::dependencies::sort_paths_topologically;
 use crate::utils::git_stats::{get_diff_files, get_git_stats};
-use crate::utils::rank::{score_path, sort_paths};
 use crate::utils::tokens::{count_tokens, estimate_cost};
 use anyhow::{Context, Result};
 use crossbeam_channel::Sender;
@@ -110,12 +107,26 @@ struct OutputState {
 }
 
 impl OutputState {
-    fn new(config: &AbyssConfig, start_token_count: Option<usize>) -> Result<Self> {
+    fn new(
+        config: &AbyssConfig,
+        start_token_count: Option<usize>,
+        graph: Option<&str>,
+        overview: Option<&crate::format::RepoOverview>,
+    ) -> Result<Self> {
         let path = config.output.clone();
         let mut file = File::create(&path)?;
         let mut formatter = crate::format::create_formatter(config.output_format);
 
-        formatter.write_header(&mut file, start_token_count, &config.prompt)?;
+        use crate::format::HeaderContext;
+        formatter.write_header(
+            &mut file,
+            HeaderContext {
+                token_count: start_token_count,
+                prompt: &config.prompt,
+                graph,
+                overview,
+            },
+        )?;
 
         Ok(Self {
             file,
@@ -141,11 +152,11 @@ impl OutputState {
         }
 
         // Close current
-        self.formatter.write_footer(&mut self.file)?;
+        self.formatter.write_footer(&mut self.file, &[])?;
 
         // Open next
         self.chunk_index += 1;
-        let base_name = base_path.file_stem().unwrap().to_string_lossy();
+        let base_name = base_path.file_stem().unwrap_or_default().to_string_lossy();
         let extension = base_path.extension().unwrap_or_default().to_string_lossy();
         let ext_str = if extension.is_empty() {
             String::new()
@@ -164,7 +175,17 @@ impl OutputState {
 
         // Create new formatter instance for new file (resets state like first_file for JSON)
         self.formatter = crate::format::create_formatter(self.format_type);
-        self.formatter.write_header(&mut file, None, &self.prompt)?;
+
+        use crate::format::HeaderContext;
+        self.formatter.write_header(
+            &mut file,
+            HeaderContext {
+                token_count: None,
+                prompt: &self.prompt,
+                graph: None,
+                overview: None,
+            },
+        )?;
 
         self.file = file;
         self.path = part_path.clone();
@@ -178,17 +199,18 @@ impl OutputState {
         &mut self,
         path: &std::path::Path,
         content: &str,
+        summary: Option<&str>,
         repo_root: &std::path::Path,
         tokens: usize,
     ) -> Result<()> {
         self.formatter
-            .write_file(&mut self.file, path, content, repo_root)?;
+            .write_file(&mut self.file, path, content, summary, repo_root)?;
         self.current_tokens += tokens;
         Ok(())
     }
 
-    fn finish(&mut self) -> Result<()> {
-        self.formatter.write_footer(&mut self.file)?;
+    fn finish(&mut self, dropped: &[PathBuf]) -> Result<()> {
+        self.formatter.write_footer(&mut self.file, dropped)?;
         Ok(())
     }
 
@@ -206,7 +228,7 @@ impl OutputState {
 pub fn discover_files(
     config: &AbyssConfig,
     tx: Option<Sender<ScanEvent>>,
-) -> Result<(Vec<PathBuf>, PathBuf)> {
+) -> Result<(Vec<PathBuf>, PathBuf, Vec<PathBuf>)> {
     let notify = |e: ScanEvent| {
         if let Some(ref tx) = tx {
             let _ = tx.send(e);
@@ -243,22 +265,152 @@ pub fn discover_files(
         }
     }
 
-    // 3. Git Stats & Sorting
+    // 3. Git Stats
     let git_stats = get_git_stats(&root_path);
-    sort_paths(&mut paths, &git_stats);
-    paths = sort_paths_topologically(&paths, &root_path, |a, b| {
-        let score_a = score_path(a, git_stats.get(a));
-        let score_b = score_path(b, git_stats.get(b));
-        score_b.cmp(&score_a).then(a.cmp(b))
+
+    // 4. Build Intelligence (Graph + Scores)
+    // Compute semantic rankings for all files to guide topological sorting.
+
+    let mut graph = crate::utils::graph::DependencyGraph::new();
+    let mut scores: HashMap<PathBuf, crate::utils::rank::FileScore> = HashMap::new();
+
+    // Pre-calculate Heuristic & Churn
+    for path in &paths {
+        let mut score = crate::utils::rank::FileScore {
+            heuristic: crate::utils::rank::heuristic_score(path),
+            ..Default::default()
+        };
+
+        if let Some(s) = git_stats.get(path) {
+            score.churn = std::cmp::min(s.churn_score * 5, 200) as i32;
+        }
+        scores.insert(path.clone(), score);
+    }
+
+    // Scan content for Entropy & Dependencies
+    // Note: Sequential execution chosen to maintain Graph integrity.
+
+    for path in &paths {
+        graph.add_node(path.clone());
+        if let Ok(content) = std_fs::read_to_string(path) {
+            // Dependencies
+            let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+            // Entropy & Tokens & Summary
+            if let Some(s) = scores.get_mut(path) {
+                s.entropy = crate::utils::rank::calculate_entropy(&content);
+                if !config.no_tokens {
+                    s.tokens = crate::utils::tokens::count_tokens(&content).unwrap_or(0);
+                } else {
+                    // Heuristic: ~4 chars per token
+                    s.tokens = content.len() / 4;
+                }
+            }
+
+            // Extract Imports
+            let imports = crate::utils::dependencies::extract_imports(&content, extension);
+
+            for import in imports {
+                if let Some(dep_path) =
+                    crate::utils::dependencies::resolve_import(&import, path, &root_path)
+                {
+                    graph.add_edge(path.clone(), dep_path);
+                }
+            }
+        }
+    }
+
+    // Calculate PageRank
+    let pagerank = graph.calculate_pagerank();
+    for (path, pr) in pagerank {
+        if let Some(s) = scores.get_mut(&path) {
+            s.pagerank = pr;
+        }
+    }
+
+    // 5. Sort Topologically with Ranking Tie-Breaker
+    // Comparator: Higher scores appear earlier in the stream for independent nodes.
+
+    paths = graph.sort_topologically(|a, b| {
+        let score_a = scores.get(a).map(|s| s.final_score()).unwrap_or(0.0);
+        let score_b = scores.get(b).map(|s| s.final_score()).unwrap_or(0.0);
+
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.cmp(b))
     });
 
-    notify(ScanEvent::FilesFound(paths.len()));
-    Ok((paths, root_path))
+    // 6. Smart Context Filtering (Knapsack)
+    let mut selected_paths = Vec::new();
+    let mut dropped_paths = Vec::new();
+    let mut _current_tokens = 0;
+
+    // Knapsack Process:
+    // Files are added in topological order (with high-value items prioritized within independent groups).
+    // Dependents typically appear later, but high PageRank ensures central files are prioritized where possible.
+    // But dependent chains constrain order.
+    // `mod.rs` (depends on utils) -> `mod.rs` MUST come after `utils`.
+    // If `utils` fills the budget -> `mod.rs` is dropped.
+    // This is bad. `mod.rs` provides the map.
+    // Strategy: Maybe we should calculate "Cumulative Tokens" and mark files to keep?
+    // But we can't break topological order for output (Rust compiler order).
+    // So we must output in Topo Order.
+    // But we can SELECT based on Score/Knapsack, effectively "Skipping" lines in the output list.
+    // YES.
+    // We shouldn't truncate the LIST. We should FILTER the LIST.
+    // Filter condition: Is this file "worth it"?
+    // Global Knapsack:
+    // 1. Gather all (Path, Score, Tokens).
+    // 2. Select Top-N items that fit in MaxTokens.
+    // 3. Output selected items in Topological Order.
+
+    if let Some(max_tokens) = config.max_tokens {
+        // Collect candidates
+        let mut candidates: Vec<&PathBuf> = paths.iter().collect();
+        // Sort by Score Descending (Ignore topology for selection)
+        candidates.sort_by(|a, b| {
+            let score_a = scores.get(*a).map(|s| s.final_score()).unwrap_or(0.0);
+            let score_b = scores.get(*b).map(|s| s.final_score()).unwrap_or(0.0);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut keep_set = std::collections::HashSet::new();
+        let mut used_tokens = 0;
+
+        for path in candidates {
+            let tokens = scores.get(path).map(|s| s.tokens).unwrap_or(0);
+            if used_tokens + tokens <= max_tokens {
+                keep_set.insert(path.clone());
+                used_tokens += tokens;
+            } else {
+                // If file is critical (heuristic > 900 e.g. README), maybe squeeze it in?
+                // For now strict limit.
+            }
+        }
+
+        for path in paths {
+            if keep_set.contains(&path) {
+                selected_paths.push(path);
+            } else {
+                dropped_paths.push(path);
+            }
+        }
+        _current_tokens = used_tokens;
+    } else {
+        selected_paths = paths;
+    }
+
+    notify(ScanEvent::FilesFound(selected_paths.len()));
+    Ok((selected_paths, root_path, dropped_paths))
 }
 
 /// Processes the selected files and generates output
 pub fn process_files(
     paths: Vec<PathBuf>,
+    dropped_files: Vec<PathBuf>,
     root_path: PathBuf,
     config: AbyssConfig,
     tx: Option<Sender<ScanEvent>>,
@@ -270,8 +422,8 @@ pub fn process_files(
     };
 
     // 1. Setup Streaming
-    let (data_tx, data_rx) =
-        crossbeam_channel::unbounded::<(usize, Option<(PathBuf, String, usize)>)>();
+    type ScanResult = Option<(PathBuf, String, Option<String>, usize)>;
+    let (data_tx, data_rx) = crossbeam_channel::unbounded::<(usize, ScanResult)>();
     let total_tokens_atomic = AtomicUsize::new(0);
 
     // 2. Cache Setup
@@ -291,14 +443,45 @@ pub fn process_files(
             paths_clone
                 .par_iter()
                 .enumerate()
-                .for_each(|(index, path)| match std_fs::read(path) {
-                    Ok(bytes) => {
-                        if crate::utils::binary::is_binary(&bytes) {
-                            let _ = data_tx.send((index, None));
-                            return;
+                .for_each(|(index, path)| {
+                        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                        let mut content;
+
+                        if extension == "pdf" {
+                             match crate::utils::pdf::extract_text(path) {
+                                Ok(text) => content = text,
+                                Err(e) => {
+                                    eprintln!("Failed to extract PDF: {}", e);
+                                    let _ = data_tx.send((index, None));
+                                    return;
+                                }
+                             }
+                        } else if ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tiff"].contains(&extension.as_str()) {
+                             match crate::utils::image::describe_image(path) {
+                                Ok(desc) => content = desc,
+                                Err(e) => {
+                                    eprintln!("Failed to describe image: {}", e);
+                                    let _ = data_tx.send((index, None));
+                                    return;
+                                }
+                             }
+                        } else {
+                            // Standard Text/Binary File
+                            match std_fs::read(path) {
+                                Ok(bytes) => {
+                                    if crate::utils::binary::is_binary(&bytes) {
+                                        let _ = data_tx.send((index, None));
+                                        return;
+                                    }
+                                    content = String::from_utf8_lossy(&bytes).to_string();
+                                }
+                                Err(_) => {
+                                     let _ = data_tx.send((index, None));
+                                     return;
+                                }
+                            }
                         }
 
-                        let mut content = String::from_utf8_lossy(&bytes).to_string();
                         let modified_time = get_modified_time(path).unwrap_or(0);
                         let mut cached_entry = None;
 
@@ -378,41 +561,85 @@ pub fn process_files(
                             notify_ref(ScanEvent::TokenCountUpdate(current));
                         }
 
+                        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                        let summary = crate::utils::summary::summarize_content(&content, extension);
+
                         notify_ref(ScanEvent::FileProcessed(path.clone()));
-                        let _ = data_tx.send((index, Some((path.clone(), content, count))));
-                    }
-                    Err(_) => {
-                        let _ = data_tx.send((index, None));
-                    }
+                        let _ =
+                            data_tx.send((index, Some((path.clone(), content, summary, count))));
                 });
             drop(data_tx);
         });
 
         // 4. Consumer
-        let mut out_state = match OutputState::new(&config, None) {
-            Ok(s) => s,
-            Err(e) => {
-                notify(ScanEvent::Error(format!("Failed to create output: {}", e)));
-                return;
-            }
+        let mermaid_graph = if config_ref.graph {
+            let graph = crate::utils::dependencies::build_dependency_graph(&paths, &root_path);
+            Some(crate::format::mermaid::generate_diagram(&graph, &root_path))
+        } else {
+            None
         };
+
+        // 5. Generate Executive Summary
+        let mut key_files = Vec::new();
+        let mut purpose = None;
+
+        for path in paths.iter().take(5) {
+            let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            if let Ok(content) = std_fs::read_to_string(path) {
+                if let Some(s) = crate::utils::summary::summarize_content(&content, extension) {
+                    key_files.push((path.clone(), s));
+                }
+
+                let filename = path
+                    .file_name()
+                    .and_then(|f| f.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if (filename == "readme.md" || filename == "readme.txt") && purpose.is_none() {
+                    purpose = crate::utils::summary::extract_readme_purpose(&content);
+                }
+            }
+        }
+
+        let overview = if !key_files.is_empty() || purpose.is_some() {
+            Some(crate::format::RepoOverview {
+                purpose,
+                key_files,
+                changes: None,
+            })
+        } else {
+            None
+        };
+
+        let mut out_state =
+            match OutputState::new(&config, None, mermaid_graph.as_deref(), overview.as_ref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    notify(ScanEvent::Error(format!("Failed to create output: {}", e)));
+                    return;
+                }
+            };
 
         if let Err(e) = out_state.write_directory_structure(&paths, &root_path) {
             notify(ScanEvent::Error(e.to_string()));
             return;
         }
 
-        let mut buffer: HashMap<usize, Option<(PathBuf, String, usize)>> = HashMap::new();
+        let mut buffer: HashMap<usize, ScanResult> = HashMap::new();
         let mut next_idx = 0;
         let total_files = paths.len();
 
         while next_idx < total_files {
             while buffer.contains_key(&next_idx) {
-                if let Some(Some((path, content, tokens))) = buffer.remove(&next_idx) {
+                if let Some(Some((path, content, summary, tokens))) = buffer.remove(&next_idx) {
                     if let Err(e) = out_state.check_rotate(tokens, &config.output) {
                         notify(ScanEvent::Error(e.to_string()));
                     }
-                    if let Err(e) = out_state.write(&path, &content, &root_path, tokens) {
+                    // Pass summary as deref for Option<&str>
+                    let summary_ref = summary.as_deref();
+                    if let Err(e) =
+                        out_state.write(&path, &content, summary_ref, &root_path, tokens)
+                    {
                         notify(ScanEvent::Error(e.to_string()));
                     }
                 } else {
@@ -432,7 +659,7 @@ pub fn process_files(
                 }
             }
         }
-        let _ = out_state.finish();
+        let _ = out_state.finish(&dropped_files);
         let _ = cache.save();
 
         if config.clipboard_copy {
@@ -457,6 +684,6 @@ pub fn process_files(
 
 /// Main entry point for the Abyss scanner (legacy wrapper)
 pub fn run_scan(config: AbyssConfig, tx: Option<Sender<ScanEvent>>) -> Result<()> {
-    let (paths, root_path) = discover_files(&config, tx.clone())?;
-    process_files(paths, root_path, config, tx)
+    let (paths, root_path, dropped) = discover_files(&config, tx.clone())?;
+    process_files(paths, dropped, root_path, config, tx)
 }
