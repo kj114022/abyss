@@ -19,9 +19,8 @@ pub fn get_git_stats(repo_root: &Path) -> HashMap<PathBuf, GitStats> {
         Err(_) => return stats_map, // Not a git repo, return empty
     };
 
-    // Walk commits to compute churn and last modified
-    // This can be expensive for huge repos, so we might want to limit depth or use a cached approach in the future.
-    // For now, we'll try a reasonably efficient walk.
+    // Walk commits to compute churn and last modified.
+    // Limit depth or use a cached approach for large repositories.
 
     let mut revwalk = match repo.revwalk() {
         Ok(rw) => rw,
@@ -35,9 +34,7 @@ pub fn get_git_stats(repo_root: &Path) -> HashMap<PathBuf, GitStats> {
     // Sort by time to get most recent first
     revwalk.set_sorting(git2::Sort::TIME).ok();
 
-    // Limit to last 1000 commits to avoid hanging on massive repos?
-    // Or just let it run? For "Deep Intelligence" we want good data.
-    // Let's cap at 1000 for performance safety in this iteration.
+    // Cap at 1000 for performance safety.
     let commit_limit = 1000;
 
     for (i, oid) in revwalk.enumerate() {
@@ -45,8 +42,7 @@ pub fn get_git_stats(repo_root: &Path) -> HashMap<PathBuf, GitStats> {
             break;
         }
 
-        // This unwrap is safe-ish because oid comes from revwalk.
-        // But better use robust error handling.
+        // OID is from revwalk; handle errors robustly.
         let oid = match oid {
             Ok(o) => o,
             Err(_) => continue,
@@ -57,10 +53,7 @@ pub fn get_git_stats(repo_root: &Path) -> HashMap<PathBuf, GitStats> {
             Err(_) => continue,
         };
 
-        // We need to compare with parent to see changed files.
-        // If no parent (first commit), compare with empty tree?
-        // Usually we just care about diffs.
-
+        // Compare with parent to identify modified files.
         let tree = match commit.tree() {
             Ok(t) => t,
             Err(_) => continue,
@@ -86,8 +79,8 @@ pub fn get_git_stats(repo_root: &Path) -> HashMap<PathBuf, GitStats> {
                         churn_score: 0,
                     });
 
-                    // Since we walk backwards in time (implied by push_head default?),
-                    // the first time we see a file is its latest modification.
+                    // Commits are walked in reverse chronological order;
+                    // first occurrence is the latest modification.
                     if entry.last_modified == 0 {
                         entry.last_modified = commit_time as u64;
                         entry.author = author.clone();
@@ -128,9 +121,7 @@ pub fn get_diff_files(repo_path: &Path, target_ref: &str) -> Option<Vec<String>>
     // Iterate over deltas
     let _ = diff.foreach(
         &mut |delta, _hunks| {
-            // Check for changed files (Added, Modified)
-            // We ignore Deleted for now as we want content context? Or maybe we want to know it's gone.
-            // Original logic just took the path.
+            // Track Additions and Modifications. Deleted files are excluded.
             #[allow(clippy::collapsible_if)]
             if let Some(path_str) = delta.new_file().path().and_then(|p| p.to_str()) {
                 files.push(path_str.to_string());

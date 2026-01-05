@@ -24,7 +24,7 @@ impl FileNode {
             path,
             name,
             is_dir,
-            is_expanded: true, // Auto-expand by default for now
+            is_expanded: true,
             is_selected: true,
             is_visible: true,
             children: Vec::new(),
@@ -71,7 +71,7 @@ impl FileNode {
             }
         }
 
-        // Visible if matches self OR any child matches (so we can reach the child)
+        // Visible if name matches OR any child is visible.
         self.is_visible = matches_self || any_child_matches;
 
         // Auto-expand if visible due to children or self match
@@ -108,11 +108,7 @@ impl FileNode {
         result
     }
 
-    // Mutable access needed for toggling via index in flat list?
-    // This is tricky. A flat list index doesn't easily map back to the tree
-    // without rebuilding the flat list or keeping references.
-    // For TUI, we usually keep the tree key-stable.
-
+    // Tree navigation and modification.
     pub fn toggle_expand_at_index(&mut self, target_index: usize) {
         let mut current = 0;
         self.toggle_expand_recursive(&mut current, target_index);
@@ -183,25 +179,7 @@ impl FileNode {
 pub fn build_tree(root_path: &Path, paths: Vec<PathBuf>) -> FileNode {
     let mut root = FileNode::new(root_path.to_path_buf(), true, 0);
 
-    // We group paths by their components relative to root
-    // But simplified: naive insertion
-
-    // Sort paths to ensure parents sort before children?
-    // Actually we just insert one by one.
-
-    // We can't easily build internal node directly with struct.
-    // Let's use an intermediate "DirEntry" map or similar.
-
-    // Better approach:
-    // 1. Create all unique parent directories
-    // 2. Nest them.
-
-    // Let's stick to a recursive builder.
-    // Group paths by first component.
-
-    // ... Actually, for a CLI tool, the number of files usually isn't massive (10k max).
-    // We can just iterate and insert.
-
+    // Naive recursive insertion of paths into the tree.
     for path in paths {
         insert_into_tree(&mut root, root_path, &path);
     }
@@ -242,19 +220,13 @@ fn insert_into_tree(node: &mut FileNode, base: &Path, full_path: &Path) {
                 insert_into_tree(&mut node.children[idx], &child_path, full_path);
             }
             None => {
-                // Determine if this child is a leaf (file) or intermediate dir
-                // If 'relative' has more than 1 component, it MUST be a dir (intermediate).
-                // If 'relative' has 1 component, it could be a file OR a dir (if input list has dirs?)
-                // Our discover_files returns FILES. So intermediate are implicit dirs.
-                // Wait, if it's the target file itself, it's a file.
-
+                // Determine if child is a leaf (file) or intermediate directory.
+                // `is_leaf` is true if `relative` has only one component (the file itself).
+                // `is_dir` is true if it's an intermediate directory (not a leaf).
                 let is_leaf = relative.components().count() == 1;
-                // If it is a leaf, it is the file itself -> is_dir = false
-                // If it is not a leaf, it is an intermediate directory -> is_dir = true
-
                 let mut new_child = FileNode::new(child_path.clone(), !is_leaf, node.depth + 1);
 
-                // If it's not a leaf, we need to recurse to add the *rest* of the path
+                // Recurse to add remaining path components if not a leaf.
                 if !is_leaf {
                     insert_into_tree(&mut new_child, &child_path, full_path);
                 }

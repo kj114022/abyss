@@ -9,7 +9,7 @@ use ratatui::{
 
 use ratatui::widgets::{BorderType, Tabs};
 
-// Catppuccin Mocha color palette (used subset)
+// Catppuccin Mocha color palette
 const MAUVE: Color = Color::Rgb(203, 166, 247);
 const GREEN: Color = Color::Rgb(166, 227, 161);
 const SURFACE0: Color = Color::Rgb(49, 50, 68);
@@ -140,8 +140,6 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
     let (search_rect, list_rect) = if state.is_searching || !state.search_query.is_empty() {
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(3), Constraint::Length(3)].as_ref()) // List first, Search at bottom? Or Top?
-            // Let's put Search at top for "active filtering" feel
             .constraints([Constraint::Length(3), Constraint::Min(3)].as_ref())
             .split(tree_area);
         (Some(v_chunks[0]), v_chunks[1])
@@ -180,7 +178,7 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
     let visible_nodes = tree.flatten();
 
     // Determine offset for scrolling
-    // Simple scrolling logic: Ensure tree_index is visible
+    // Scrolling logic: maintain tree_index visibility.
     let list_height = list_rect.height as usize;
     if list_height == 0 {
         return;
@@ -258,15 +256,12 @@ fn draw_preview_pane(f: &mut Frame, state: &mut AppState, area: Rect) {
         .title("Preview");
 
     if let Some(path) = &state.preview_path {
-        // let ext = path.extension().unwrap_or_default().to_string_lossy();
-        // let highlighted = highlight_code(&state.preview_content, &ext);
-
         let p = Paragraph::new(state.preview_highlighted.clone())
             .block(block.title(format!(
                 "Preview: {}",
                 path.file_name().unwrap_or_default().to_string_lossy()
             )))
-            .wrap(Wrap { trim: false }); // No wrap for code usually, but TUI limitation
+            .wrap(Wrap { trim: false });
         f.render_widget(p, area);
     } else {
         let p = Paragraph::new("Select a file to preview")
@@ -336,8 +331,8 @@ fn draw_progress_and_list(f: &mut Frame, state: &mut AppState, area: Rect) {
     let items: Vec<ListItem> = state
         .scanned_files
         .iter()
-        .rev() // Show newest at top if we want, or match scroll
-        .take(20) // Show last 20
+        .rev()
+        .take(20)
         .map(|p| ListItem::new(p.file_name().unwrap_or_default().to_string_lossy()))
         .collect();
 
@@ -361,7 +356,7 @@ fn draw_status(f: &mut Frame, state: &mut AppState, area: Rect) {
         Color::Cyan
     };
 
-    // Simple pulse effect on color (visual only)
+    // Dynamic status color based on state.
     let style = Style::default().fg(status_color);
 
     let status = Paragraph::new(Line::from(vec![Span::styled(&state.status_message, style)]))

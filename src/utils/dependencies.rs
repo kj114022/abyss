@@ -67,9 +67,8 @@ pub fn extract_imports(content: &str, extension: &str) -> Vec<String> {
 
     while let Some(m) = matches.next() {
         for capture in m.captures {
-            // Filter only the capture we care about (usually @import)
-            // But for simple queries with one capture, it's fine to take it.
-            // For JS require, we have @func and @import. We only want @import.
+            // Filter for @import capture.
+            // Handles JS require(@func, @import) specifically.
             let capture_name = query.capture_names()[capture.index as usize];
             if capture_name != "import" {
                 continue;
@@ -94,8 +93,7 @@ pub fn extract_imports(content: &str, extension: &str) -> Vec<String> {
     imports
 }
 
-/// Resolves an import string to a potential file path within the repo.
-/// This is a heuristic and won't be perfect (especially for dynamic imports or intricate path algos).
+/// Heuristic resolution of import strings to repository paths.
 pub fn resolve_import(import: &str, current_file: &Path, repo_root: &Path) -> Option<PathBuf> {
     let extension = current_file
         .extension()
@@ -131,7 +129,7 @@ pub fn resolve_import(import: &str, current_file: &Path, repo_root: &Path) -> Op
                     return Some(candidate_mod);
                 }
             }
-            // Handling super:: etc is complex, skipping for MVP
+            // Relative `super::` resolution is not implemented.
         }
         "js" | "ts" | "jsx" | "tsx" => {
             // Relatives: ./foo, ../bar
@@ -163,9 +161,7 @@ pub fn resolve_import(import: &str, current_file: &Path, repo_root: &Path) -> Op
                 return None;
             }
 
-            // Heuristic: assume root-relative or relative to current file
-            // Python resolution is notoriously context-dependent.
-            // Simple check: replace dots with slashes
+            // Heuristic: maps dots to slashes relative to root.
             let rel_path = import.replace('.', "/");
             let candidate = repo_root.join(format!("{}.py", rel_path));
             if candidate.exists() {
@@ -183,12 +179,9 @@ pub fn resolve_import(import: &str, current_file: &Path, repo_root: &Path) -> Op
     None
 }
 
-/// Sorts paths topologically based on their dependencies.
-/// independent files -> ... -> most dependent files
-/// Wait, for LLM context, we usually want:
-/// DEFINITIONS first, USAGES last.
-/// So if A imports B (A -> B), B should come BEFORE A.
-/// Standard topo sort on (A -> B) gives B then A (reverse topological).
+/// Sorts paths topologically based on dependencies.
+/// Assemblies context in dependency order (definitions before usages) to optimize LLM comprehension.
+/// If A -> B, B appears before A.
 ///
 /// `topological-sort` crate:
 /// `add_dependency(dependency, dependent)`
@@ -218,9 +211,8 @@ where
 
             for import in imports {
                 if let Some(dep_path) = resolve_import(&import, path, repo_root) {
-                    // Only care if dependency is in our input list (part of the context)
-                    // We need to check if canonical paths match or just relative.
-                    // For simplicity, strict match
+                    // Resolve if the dependency is within the scanned set.
+                    // Performs a strict matching check on canonical paths.
                     if let Ok(canon_dep) = dep_path.canonicalize() {
                         if path_set.contains(&canon_dep) && canon_dep != *path {
                             // dependency -> dependent
@@ -250,9 +242,7 @@ where
         result.extend(chunk);
     }
 
-    // Add missing files (cycles or isolated files that didn't get popped for some reason?)
-    // Actually isolated files are popped in the first `pop_all`.
-    // Only cycles remain.
+    // Cycles are added last to ensure inclusion.
     let result_set: HashSet<_> = result.iter().cloned().collect();
     for path in paths {
         if !result_set.contains(path) {
@@ -278,12 +268,8 @@ pub fn build_dependency_graph(
 
             for import in imports {
                 if let Some(dep_path) = resolve_import(&import, path, repo_root) {
-                    // We only add edges if the target is also in our scanned paths?
-                    // Or do we want to show external deps too?
-                    // For now, let's include if it exists in the repo, even if not selected?
-                    // No, for context, usually we only care about the relations *within* the selected context.
-                    // But showing that X depends on Y (even if Y isn't fully included) provides architectural context.
-                    // Let's verify existence on disk (resolve_import does this).
+                    // Add edges for internal dependencies to provide architectural context.
+                    // resolve_import verifies existence of target on disk.
                     graph.add_edge(path.clone(), dep_path);
                 }
             }

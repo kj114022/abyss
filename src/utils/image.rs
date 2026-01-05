@@ -16,10 +16,7 @@ pub fn describe_image(path: &Path) -> Result<String> {
         .map(|s| s.to_string_lossy())
         .unwrap_or_else(|| "unknown.img".into());
 
-    // We can infer format from extension or just say "Image"
-    // The `image` crate `open` detects format, but `DynamicImage` doesn't store it explicitly in a public field easily
-    // without using `image::io::Reader`.
-    // Let's just use extension for the "Format" part of the display for speed/simplicity.
+    // Detect image format from extension for display.
     let ext = path
         .extension()
         .map(|s| s.to_string_lossy().to_string().to_uppercase())

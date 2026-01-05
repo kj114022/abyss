@@ -50,27 +50,14 @@ impl DependencyGraph {
 
         // Pre-calculate outgoing edges count for each node
         let mut out_degree: HashMap<PathBuf, usize> = HashMap::new();
-        // Since our edges map is `edges: HashMap<PathBuf, HashSet<PathBuf>>`
-        // `edges[from]` gives targets. `from` depends on `to`.
-        // Wait, standard PageRank: A link from A to B is a "vote" for B.
-        // In dependency graph: A imports B. A is analyzing B. A "votes" for B?
-        // Usually, if many files import utils.rs, utils.rs is important.
-        // So A -> B (dependency) means B gets a vote from A.
-        // Correct. A depends on B. Edge is A -> B.
-        // PageRank flows along edges. A passes score to B.
-
         for (from, targets) in &self.edges {
             out_degree.insert(from.clone(), targets.len());
         }
 
-        // We also need to know which nodes map to which targets inversely for efficient iteration?
-        // PageRank formula: PR(u) = (1-d)/N + d * Sum(PR(v) / L(v)) for all v linking to u.
-        // In our graph, v links to u if v imports u.
-        // That is exactly our `edges` map: key depends on value.
-        // So `edges` stores outgoing links. `edges.get(v)` returns list of `u`s.
-        // But to calculate PR(u), we need incoming links (who links TO u).
-        // Let's build the reverse map: node -> list of voters (dependents)
+        // PageRank flows along edges from dependents to dependencies.
+        // A link from A to B (A depends on B) is a "vote" for B.
 
+        // Build adjacency list (dependents per dependency) for score distribution.
         let mut incoming: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
         for (from, targets) in &self.edges {
             for to in targets {
@@ -91,7 +78,7 @@ impl DependencyGraph {
                 }
             }
 
-            // Each node gets an equal share of the sink rank
+            // Redistribute rank from sink nodes (no outgoing edges) equally.
             let sink_contribution = sink_rank / num_nodes as f64;
 
             for node in &self.nodes {
@@ -130,20 +117,7 @@ impl DependencyGraph {
             ts.insert(node.clone());
         }
 
-        // Add dependencies: A -> B means A depends on B.
-        // We want B before A.
-        // ts.add_dependency(dependency, dependent)
-        // dependent depends on dependency.
-        // So B is dependency, A is dependent.
-        // add_dependency(B, A).
-
-        // self.edges: key (from) -> value (targets/tos)
-        // from depends on to.
-        // A (from) -> B (to)
-        // A depends on B.
-        // So B comes before A.
-        // add_dependency(B, A) => add_dependency(to, from)
-
+        // Dependency order: A depends on B implies B precedes A.
         for (from, targets) in &self.edges {
             for to in targets {
                 ts.add_dependency(to.clone(), from.clone());
@@ -155,16 +129,8 @@ impl DependencyGraph {
             // Pop all items with no dependencies
             let mut batch = ts.pop_all();
             if batch.is_empty() {
-                // Cycle detected? topological-sort crate handles this by returning empty pop if cycle exists but not empty.
-                // Force break to avoid infinite loop.
-                if !ts.is_empty() {
-                    // Cycle fallback: dump remaining arbitrary
-                    // Or maybe we can just extend?
-                    // The crate documentation says `pop_all` returns empty if cycle.
-                    // We could iterate `len()`?
-                    // For now, let's just break.
-                    break;
-                }
+                // Handle cycles or isolated nodes.
+                break;
             }
 
             // Sort this batch using the importance score

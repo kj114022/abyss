@@ -28,8 +28,7 @@ pub fn highlight_code(code: &str, extension: &str) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     for line_str in code.lines() {
-        // HighlightLines works best with newlines included, but code.lines() strips them.
-        // We'll highlight the line content.
+        // Highlight line content (syntect works best with newlines, but ratatui Line is per-line).
         let ranges: Vec<(SyntectStyle, &str)> =
             h.highlight_line(line_str, &SYNTAX_SET).unwrap_or_default();
 

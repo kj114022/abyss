@@ -33,12 +33,10 @@ mod tests {
                 println!(\"Hello\");
             }
         ";
-        let _expected = "fn main() {\nprintln!(\"Hello\");\n}\n";
         let result = compress_content(input);
 
         // Normalize newlines for comparison
         let result = result.trim().replace("\n\n", "\n");
-        // The simple regex might leave some newlines. Let's just check key content.
         assert!(result.contains("fn main() {"));
         assert!(!result.contains("This is a comment"));
     }
@@ -68,8 +66,6 @@ mod tests {
     fn test_reduce_whitespace() {
         let input = "code();\n\n\n\nnext();";
         let result = compress_content(input);
-        // Should have at most one newline sequence, but implementation might just reduce multiple file-level newlines.
-        // The implementation replaces `\n\s*\n` with `\n`.
         assert!(result.contains("code();\nnext();") || result.contains("code();\n\nnext();"));
     }
 }

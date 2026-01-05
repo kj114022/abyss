@@ -24,8 +24,7 @@ pub fn summarize_content(content: &str, extension: &str) -> Option<String> {
             "#,
         ),
         "js" | "jsx" | "ts" | "tsx" => (
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), // Use TS for both for now or split?
-            // TS language usually handles JS fine.
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             r#"
             (class_declaration name: (_) @class)
             (function_declaration name: (_) @fn)
@@ -77,11 +76,7 @@ pub fn summarize_content(content: &str, extension: &str) -> Option<String> {
         for capture in m.captures {
             let capture_name = query.capture_names()[capture.index as usize];
             if let Ok(text) = capture.node.utf8_text(content.as_bytes()) {
-                // For some items we might want just the name
-                // The query captures the *name* node usually, based on the query above.
-                // e.g. (struct_item name: (_) @struct) captures the identifier.
-
-                // However, for `impl`, we capture the type.
+                // Match capture type to symbol category.
                 match capture_name {
                     "struct" | "type" => structs.push(text),
                     "enum" => enums.push(text),
@@ -131,9 +126,7 @@ pub fn summarize_content(content: &str, extension: &str) -> Option<String> {
         parts.push(format_list("Traits/Interfaces", traits));
     }
 
-    // Functions are usually too many. Only show if no types?
-    // Or just count?
-    // "Functions: run, build, test (+12)"
+    // Display top 5 functions found.
     if !fns.is_empty() {
         parts.push(format_list("Functions", fns));
     }
@@ -154,7 +147,7 @@ pub fn summarize_content(content: &str, extension: &str) -> Option<String> {
 /// Fallback summarizer using Regex for unknown languages
 fn summarize_content_regex(content: &str) -> Option<String> {
     use regex::Regex;
-    // Compile regexes once or lazily? For now compiled inside.
+    // Regex fallback for languages without tree-sitter support.
     let re_class =
         Regex::new(r"^\s*(class|struct|module|interface|trait)\s+([a-zA-Z0-9_]+)").ok()?;
     let re_fn =
@@ -247,7 +240,6 @@ mod tests {
         struct Point { int x; };
         int main() { return 0; }
         "#;
-        // Should use tree-sitter-c, NOT heuristic
         let summary = summarize_content(content, "c").unwrap();
         assert!(summary.contains("Functions: main"));
         assert!(!summary.contains("(Heuristic)"));

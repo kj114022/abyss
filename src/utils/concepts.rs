@@ -125,11 +125,8 @@ mod tests {
         let concepts = extract_concepts(code, "rs");
         assert!(concepts.contains(&"struct User".to_string()));
         assert!(concepts.contains(&"trait Auth".to_string()));
-        assert!(concepts.contains(&"impl User".to_string())); // impl type name
+        assert!(concepts.contains(&"impl User".to_string()));
         assert!(concepts.contains(&"fn helper".to_string()));
-        // Note: fn login inside impl might not be caught by top-level queries dependent on nesting,
-        // or it might be. My query was flat: (function_item) matches anywhere.
-        // So fn login should also be there.
     }
 
     #[test]
