@@ -57,8 +57,13 @@ pub struct AbyssConfig {
     pub max_depth: Option<usize>,
     /// Custom prompt/instruction to prepend to the output
     pub prompt: Option<String>,
+    /// Maximum number of tokens to include in output
+    pub max_tokens: Option<usize>,
+    /// Diff mode: Scan only changed files relative to this git ref (e.g., "main", "HEAD~1")
     /// Diff mode: Scan only changed files relative to this git ref (e.g., "main", "HEAD~1")
     pub diff: Option<String>,
+    /// Include Mermaid dependency graph in output
+    pub graph: bool,
 }
 
 impl AbyssConfig {
@@ -176,8 +181,10 @@ impl Default for AbyssConfig {
             max_file_size: None,
             max_depth: None,
             prompt: None,
+            max_tokens: None,
             redact: false,
             diff: None,
+            graph: false,
         }
     }
 }
@@ -206,6 +213,8 @@ mod tests {
             prompt: None,
             redact: false,
             diff: None,
+            graph: false,
+            max_tokens: None,
         };
         assert!(config.validate().is_err());
     }
