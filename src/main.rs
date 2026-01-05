@@ -111,9 +111,17 @@ struct Args {
     #[arg(long, value_name = "SHELL")]
     completions: Option<String>,
 
-    /// LLM preset (gpt4, gpt3, claude, gemini) - sets max_tokens automatically
-    #[arg(long, value_name = "MODEL")]
-    preset: Option<String>,
+    /// GPT-4 preset (128K tokens)
+    #[arg(long)]
+    gpt4: bool,
+
+    /// Claude preset (200K tokens)
+    #[arg(long)]
+    claude: bool,
+
+    /// Gemini preset (1M tokens)
+    #[arg(long)]
+    gemini: bool,
 }
 
 fn main() -> Result<()> {
@@ -122,7 +130,7 @@ fn main() -> Result<()> {
     // Handle completions generation early exit
     if let Some(shell) = &args.completions {
         use clap::CommandFactory;
-        use clap_complete::{generate, Shell};
+        use clap_complete::{Shell, generate};
         use std::io;
 
         let shell = match shell.to_lowercase().as_str() {
@@ -131,7 +139,10 @@ fn main() -> Result<()> {
             "fish" => Shell::Fish,
             "powershell" | "ps" => Shell::PowerShell,
             _ => {
-                eprintln!("Unsupported shell: {}. Use: bash, zsh, fish, powershell", shell);
+                eprintln!(
+                    "Unsupported shell: {}. Use: bash, zsh, fish, powershell",
+                    shell
+                );
                 std::process::exit(1);
             }
         };
@@ -199,20 +210,13 @@ fn main() -> Result<()> {
         config.max_tokens = Some(mt);
     }
 
-    // LLM preset handling
-    if let Some(preset) = args.preset {
-        let tokens = match preset.to_lowercase().as_str() {
-            "gpt4" | "gpt-4" | "gpt4o" => 128_000,
-            "gpt3" | "gpt-3.5" | "gpt35" => 16_000,
-            "claude" | "claude3" | "sonnet" => 200_000,
-            "gemini" | "gemini-pro" => 1_000_000,
-            "llama" | "llama3" => 8_000,
-            _ => {
-                eprintln!("Unknown preset: {}. Using gpt4 default.", preset);
-                128_000
-            }
-        };
-        config.max_tokens = Some(tokens);
+    // Direct model preset flags
+    if args.gpt4 {
+        config.max_tokens = Some(128_000);
+    } else if args.claude {
+        config.max_tokens = Some(200_000);
+    } else if args.gemini {
+        config.max_tokens = Some(1_000_000);
     }
 
     // Environment variable fallback

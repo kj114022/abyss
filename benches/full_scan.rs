@@ -1,8 +1,8 @@
-use criterion::{criterion_group, criterion_main, Criterion};
-use std::path::PathBuf;
-use tempfile::TempDir;
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
+use tempfile::TempDir;
 
 fn create_test_repo(file_count: usize) -> TempDir {
     let temp_dir = TempDir::new().unwrap();

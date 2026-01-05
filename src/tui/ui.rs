@@ -9,13 +9,9 @@ use ratatui::{
 
 use ratatui::widgets::{BorderType, Tabs};
 
-// Catppuccin Mocha color palette
+// Catppuccin Mocha color palette (used subset)
 const MAUVE: Color = Color::Rgb(203, 166, 247);
-const TEAL: Color = Color::Rgb(148, 226, 213);
-const PEACH: Color = Color::Rgb(250, 179, 135);
 const GREEN: Color = Color::Rgb(166, 227, 161);
-const YELLOW: Color = Color::Rgb(249, 226, 175);
-const RED: Color = Color::Rgb(243, 139, 168);
 const SURFACE0: Color = Color::Rgb(49, 50, 68);
 const TEXT: Color = Color::Rgb(205, 214, 244);
 
@@ -32,11 +28,15 @@ fn file_icon(path: &std::path::Path) -> &'static str {
         Some("html" | "css" | "scss") => "",
         Some("sh" | "bash" | "zsh") => "",
         Some("lock") => "",
-        _ if path.file_name().map_or(false, |n| n.to_str().map_or(false, |s| s.starts_with('.'))) => "",
+        _ if path
+            .file_name()
+            .map_or(false, |n| n.to_str().map_or(false, |s| s.starts_with('.'))) =>
+        {
+            ""
+        }
         _ => "",
     }
 }
-
 
 pub fn draw_ui(f: &mut Frame, state: &mut AppState) {
     let chunks = Layout::default()

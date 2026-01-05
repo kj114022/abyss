@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
 fn count_tokens_benchmark(c: &mut Criterion) {
     let small_content = "fn main() { println!(\"Hello, world!\"); }";
@@ -55,5 +55,9 @@ fn parallel_tokenization_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, count_tokens_benchmark, parallel_tokenization_benchmark);
+criterion_group!(
+    benches,
+    count_tokens_benchmark,
+    parallel_tokenization_benchmark
+);
 criterion_main!(benches);

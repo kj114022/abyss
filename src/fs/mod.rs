@@ -22,10 +22,13 @@ impl<'a> Default for WalkConfig<'a> {
 }
 
 pub fn walk_directory(path: &Path, ignore_patterns: &[String]) -> Result<Vec<PathBuf>> {
-    walk_directory_with_config(path, WalkConfig {
-        ignore_patterns,
-        ..Default::default()
-    })
+    walk_directory_with_config(
+        path,
+        WalkConfig {
+            ignore_patterns,
+            ..Default::default()
+        },
+    )
 }
 
 pub fn walk_directory_with_config(path: &Path, config: WalkConfig) -> Result<Vec<PathBuf>> {
@@ -57,7 +60,8 @@ pub fn walk_directory_with_config(path: &Path, config: WalkConfig) -> Result<Vec
     let mut files = Vec::new();
 
     // Precompile include patterns for matching
-    let include_matchers: Vec<glob::Pattern> = config.include_patterns
+    let include_matchers: Vec<glob::Pattern> = config
+        .include_patterns
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
         .collect();
@@ -80,10 +84,11 @@ pub fn walk_directory_with_config(path: &Path, config: WalkConfig) -> Result<Vec
                     // Include pattern check
                     if !include_matchers.is_empty() {
                         let matches = include_matchers.iter().any(|m| {
-                            m.matches_path(file_path) || 
-                            file_path.file_name()
-                                .and_then(|n| n.to_str())
-                                .is_some_and(|name| m.matches(name))
+                            m.matches_path(file_path)
+                                || file_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .is_some_and(|name| m.matches(name))
                         });
                         if !matches {
                             continue; // Skip files not matching include patterns
@@ -100,7 +105,6 @@ pub fn walk_directory_with_config(path: &Path, config: WalkConfig) -> Result<Vec
     files.sort();
     Ok(files)
 }
-
 
 #[cfg(test)]
 mod tests {

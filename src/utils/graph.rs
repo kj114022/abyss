@@ -84,7 +84,9 @@ impl DependencyGraph {
             // Calculate total sink rank (nodes with no outgoing edges)
             let mut sink_rank = 0.0;
             for node in &self.nodes {
-                if !self.edges.contains_key(node) || self.edges.get(node).is_some_and(|e| e.is_empty()) {
+                if !self.edges.contains_key(node)
+                    || self.edges.get(node).is_some_and(|e| e.is_empty())
+                {
                     sink_rank += scores.get(node).unwrap_or(&0.0);
                 }
             }
