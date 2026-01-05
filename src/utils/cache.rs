@@ -17,8 +17,17 @@ pub struct Cache {
 }
 
 impl Cache {
+    pub fn get_cache_path() -> std::path::PathBuf {
+        let mut path = dirs::cache_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+        path.push("abyss");
+        fs::create_dir_all(&path).unwrap_or_default();
+        path.push("cache.json");
+        path
+    }
+
     pub fn load() -> Self {
-        if let Ok(content) = fs::read_to_string(".abyss-cache.json") {
+        let path = Self::get_cache_path();
+        if let Ok(content) = fs::read_to_string(path) {
             serde_json::from_str(&content).unwrap_or_default()
         } else {
             Cache::default()
@@ -26,8 +35,9 @@ impl Cache {
     }
 
     pub fn save(&self) -> Result<()> {
+        let path = Self::get_cache_path();
         let content = serde_json::to_string(&self)?;
-        fs::write(".abyss-cache.json", content)?;
+        fs::write(path, content)?;
         Ok(())
     }
 
