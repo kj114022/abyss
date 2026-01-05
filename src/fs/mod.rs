@@ -3,22 +3,12 @@ use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 
 /// Configuration for directory walking
+#[derive(Default)]
 pub struct WalkConfig<'a> {
     pub ignore_patterns: &'a [String],
     pub include_patterns: &'a [String],
     pub max_depth: Option<usize>,
     pub max_file_size: Option<usize>,
-}
-
-impl<'a> Default for WalkConfig<'a> {
-    fn default() -> Self {
-        Self {
-            ignore_patterns: &[],
-            include_patterns: &[],
-            max_depth: None,
-            max_file_size: None,
-        }
-    }
 }
 
 pub fn walk_directory(path: &Path, ignore_patterns: &[String]) -> Result<Vec<PathBuf>> {
@@ -73,12 +63,11 @@ pub fn walk_directory_with_config(path: &Path, config: WalkConfig) -> Result<Vec
                     let file_path = entry.path();
 
                     // Max file size check
-                    if let Some(max_size) = config.max_file_size {
-                        if let Ok(metadata) = file_path.metadata() {
-                            if metadata.len() as usize > max_size {
-                                continue; // Skip oversized files
-                            }
-                        }
+                    if config
+                        .max_file_size
+                        .is_some_and(|s| file_path.metadata().is_ok_and(|m| m.len() as usize > s))
+                    {
+                        continue;
                     }
 
                     // Include pattern check

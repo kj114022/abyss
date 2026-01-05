@@ -2,7 +2,6 @@ use abyss::config::{AbyssConfig, CompressionMode, OutputFormat};
 use abyss::run;
 use image::{ImageBuffer, Rgb};
 use std::fs;
-use std::path::PathBuf;
 use tempfile::tempdir;
 
 #[test]
@@ -48,7 +47,7 @@ fn test_image_ingestion() {
 
     // 4. Verify Output
     let content = fs::read_to_string(output_file).unwrap();
-    println!("Output content:\n{}", content);
+    println!("Output content:\n{content}");
 
     // Should contain the image description
     assert!(content.contains("test_logo.png"));

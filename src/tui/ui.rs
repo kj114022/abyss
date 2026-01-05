@@ -18,23 +18,23 @@ const TEXT: Color = Color::Rgb(205, 214, 244);
 /// Returns file type icon based on extension
 fn file_icon(path: &std::path::Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => "",
-        Some("py") => "",
-        Some("js" | "jsx" | "ts" | "tsx") => "",
-        Some("go") => "",
-        Some("c" | "cpp" | "h" | "hpp") => "",
-        Some("md" | "txt") => "",
-        Some("toml" | "yaml" | "yml" | "json") => "",
-        Some("html" | "css" | "scss") => "",
-        Some("sh" | "bash" | "zsh") => "",
-        Some("lock") => "",
+        Some("rs") => "󱘗",
+        Some("py") => "",
+        Some("js" | "jsx" | "ts" | "tsx") => "",
+        Some("go") => "",
+        Some("c" | "cpp" | "h" | "hpp") => "",
+        Some("md" | "txt") => "󰍔",
+        Some("toml" | "yaml" | "yml" | "json") => "",
+        Some("html" | "css" | "scss") => "",
+        Some("sh" | "bash" | "zsh") => "󱆃",
+        Some("lock") => "󰌾",
         _ if path
             .file_name()
-            .map_or(false, |n| n.to_str().map_or(false, |s| s.starts_with('.'))) =>
+            .is_some_and(|n| n.to_str().is_some_and(|s| s.starts_with('.'))) =>
         {
-            ""
+            "󱁺"
         }
-        _ => "",
+        _ => "󰈔",
     }
 }
 
@@ -206,13 +206,13 @@ fn draw_selection_list(f: &mut Frame, state: &mut AppState, area: Rect) {
 
             // Icon with file type
             let icon = if node.is_dir {
-                if node.is_expanded { " " } else { " " }
+                if node.is_expanded { "󰉖" } else { "󰉋" }
             } else {
                 file_icon(std::path::Path::new(&node.name))
             };
 
             // Checkbox with color
-            let checkbox = if node.is_selected { " " } else { " " };
+            let checkbox = if node.is_selected { "󰄬" } else { "󰄱" };
 
             // Name
             let name = &node.name;

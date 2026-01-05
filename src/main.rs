@@ -220,12 +220,12 @@ fn main() -> Result<()> {
     }
 
     // Environment variable fallback
-    if config.max_tokens.is_none() {
-        if let Ok(val) = std::env::var("ABYSS_MAX_TOKENS") {
-            if let Ok(tokens) = val.parse::<usize>() {
-                config.max_tokens = Some(tokens);
-            }
-        }
+    if config.max_tokens.is_none()
+        && let Some(tokens) = std::env::var("ABYSS_MAX_TOKENS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+    {
+        config.max_tokens = Some(tokens);
     }
 
     if args.graph {
