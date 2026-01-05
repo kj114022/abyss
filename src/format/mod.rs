@@ -2,6 +2,7 @@
 
 pub mod json;
 pub mod markdown;
+pub mod mermaid;
 pub mod plain;
 
 use anyhow::Result;
@@ -13,13 +14,22 @@ pub use self::xml::*;
 
 use crate::config::OutputFormat;
 
+#[derive(Debug, Clone)]
+pub struct RepoOverview {
+    pub purpose: Option<String>,
+    pub key_files: Vec<(PathBuf, String)>,
+    pub changes: Option<Vec<String>>, // New field for recent commits
+}
+
+pub struct HeaderContext<'a> {
+    pub token_count: Option<usize>,
+    pub prompt: &'a Option<String>,
+    pub graph: Option<&'a str>,
+    pub overview: Option<&'a RepoOverview>,
+}
+
 pub trait Formatter {
-    fn write_header(
-        &mut self,
-        output: &mut dyn Write,
-        token_count: Option<usize>,
-        prompt: &Option<String>,
-    ) -> Result<()>;
+    fn write_header(&mut self, output: &mut dyn Write, context: HeaderContext) -> Result<()>;
 
     fn write_directory_structure(
         &mut self,
@@ -33,10 +43,11 @@ pub trait Formatter {
         output: &mut dyn Write,
         path: &Path,
         content: &str,
+        summary: Option<&str>,
         repo_root: &Path,
     ) -> Result<()>;
 
-    fn write_footer(&mut self, output: &mut dyn Write) -> Result<()>;
+    fn write_footer(&mut self, output: &mut dyn Write, dropped: &[PathBuf]) -> Result<()>;
 }
 
 pub fn create_formatter(format: OutputFormat) -> Box<dyn Formatter> {
@@ -55,14 +66,45 @@ pub mod xml {
     pub struct XmlFormatter;
 
     impl Formatter for XmlFormatter {
-        fn write_header(
-            &mut self,
-            output: &mut dyn Write,
-            token_count: Option<usize>,
-            prompt: &Option<String>,
-        ) -> Result<()> {
+        fn write_header(&mut self, output: &mut dyn Write, context: HeaderContext) -> Result<()> {
             writeln!(output, "<abyss>")?;
-            if let Some(p) = prompt {
+
+            // Executive Summary (XML)
+            if let Some(overview) = context.overview {
+                writeln!(output, "<executive_summary>")?;
+                if let Some(purpose) = &overview.purpose {
+                    writeln!(output, "    <purpose><![CDATA[{}]]></purpose>", purpose)?;
+                }
+                if !overview.key_files.is_empty() {
+                    writeln!(output, "    <key_modules>")?;
+                    for (path, summary) in &overview.key_files {
+                        writeln!(
+                            output,
+                            "        <module path=\"{}\" summary=\"{}\" />",
+                            path.display(),
+                            summary
+                        )?;
+                    }
+                    writeln!(output, "    </key_modules>")?;
+                }
+                if let Some(changes) = &overview.changes {
+                    writeln!(output, "    <recent_changes>")?;
+                    for msg in changes.iter().take(5) {
+                        writeln!(output, "        <change><![CDATA[{}]]></change>", msg)?;
+                    }
+                    writeln!(output, "    </recent_changes>")?;
+                }
+                writeln!(output, "</executive_summary>")?;
+            }
+
+            if let Some(g) = context.graph {
+                writeln!(output, "<graph>")?;
+                writeln!(output, "    <![CDATA[")?;
+                writeln!(output, "{}", g)?;
+                writeln!(output, "    ]]>")?;
+                writeln!(output, "</graph>")?;
+            }
+            if let Some(p) = context.prompt {
                 writeln!(output, "<prompt>")?;
                 writeln!(output, "    <![CDATA[")?;
                 let escaped = p.replace("]]>", "]]]]><![CDATA[>");
@@ -70,7 +112,7 @@ pub mod xml {
                 writeln!(output, "    ]]>")?;
                 writeln!(output, "</prompt>")?;
             }
-            if let Some(count) = token_count {
+            if let Some(count) = context.token_count {
                 writeln!(output, "<token_count>{}</token_count>", count)?;
             }
             Ok(())
@@ -96,11 +138,21 @@ pub mod xml {
             output: &mut dyn Write,
             path: &Path,
             content: &str,
+            summary: Option<&str>,
             repo_root: &Path,
         ) -> Result<()> {
             let relative = path.strip_prefix(repo_root).unwrap_or(path);
 
-            writeln!(output, "<file path=\"{}\">", relative.display())?;
+            if let Some(s) = summary {
+                writeln!(
+                    output,
+                    "<file path=\"{}\" summary=\"{}\">",
+                    relative.display(),
+                    s.escape_default()
+                )?;
+            } else {
+                writeln!(output, "<file path=\"{}\">", relative.display())?;
+            }
             writeln!(output, "    <![CDATA[")?;
             // Escape CDATA terminators if present
             let escaped = content.replace("]]>", "]]]]><![CDATA[>");
@@ -110,7 +162,14 @@ pub mod xml {
             Ok(())
         }
 
-        fn write_footer(&mut self, output: &mut dyn Write) -> Result<()> {
+        fn write_footer(&mut self, output: &mut dyn Write, dropped: &[PathBuf]) -> Result<()> {
+            if !dropped.is_empty() {
+                writeln!(output, "<dropped_files>")?;
+                for path in dropped {
+                    writeln!(output, "    <file>{}</file>", path.display())?;
+                }
+                writeln!(output, "</dropped_files>")?;
+            }
             writeln!(output, "</abyss>")?;
             Ok(())
         }
@@ -121,11 +180,20 @@ pub mod xml {
         output: &mut impl Write,
         token_count: Option<usize>,
         prompt: &Option<String>,
+        graph: Option<&str>,
     ) -> Result<()> {
-        XmlFormatter.write_header(output, token_count, prompt)
+        XmlFormatter.write_header(
+            output,
+            HeaderContext {
+                token_count,
+                prompt,
+                graph,
+                overview: None,
+            },
+        )
     }
-    pub fn write_footer(output: &mut impl Write) -> Result<()> {
-        XmlFormatter.write_footer(output)
+    pub fn write_footer(output: &mut impl Write, dropped: &[PathBuf]) -> Result<()> {
+        XmlFormatter.write_footer(output, dropped)
     }
     pub fn write_file(
         output: &mut impl Write,
@@ -133,7 +201,7 @@ pub mod xml {
         content: &str,
         root: &Path,
     ) -> Result<()> {
-        XmlFormatter.write_file(output, path, content, root)
+        XmlFormatter.write_file(output, path, content, None, root)
     }
     pub fn write_directory_structure(o: &mut impl Write, f: &[PathBuf], r: &Path) -> Result<()> {
         XmlFormatter.write_directory_structure(o, f, r)

@@ -96,7 +96,7 @@ pub fn extract_imports(content: &str, extension: &str) -> Vec<String> {
 
 /// Resolves an import string to a potential file path within the repo.
 /// This is a heuristic and won't be perfect (especially for dynamic imports or intricate path algos).
-fn resolve_import(import: &str, current_file: &Path, repo_root: &Path) -> Option<PathBuf> {
+pub fn resolve_import(import: &str, current_file: &Path, repo_root: &Path) -> Option<PathBuf> {
     let extension = current_file
         .extension()
         .and_then(|s| s.to_str())
@@ -261,6 +261,35 @@ where
     }
 
     result
+}
+
+/// Builds a full dependency graph for the given set of files.
+pub fn build_dependency_graph(
+    paths: &[PathBuf],
+    repo_root: &Path,
+) -> crate::utils::graph::DependencyGraph {
+    let mut graph = crate::utils::graph::DependencyGraph::new();
+
+    for path in paths {
+        graph.add_node(path.clone());
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            let imports = extract_imports(&content, extension);
+
+            for import in imports {
+                if let Some(dep_path) = resolve_import(&import, path, repo_root) {
+                    // We only add edges if the target is also in our scanned paths?
+                    // Or do we want to show external deps too?
+                    // For now, let's include if it exists in the repo, even if not selected?
+                    // No, for context, usually we only care about the relations *within* the selected context.
+                    // But showing that X depends on Y (even if Y isn't fully included) provides architectural context.
+                    // Let's verify existence on disk (resolve_import does this).
+                    graph.add_edge(path.clone(), dep_path);
+                }
+            }
+        }
+    }
+    graph
 }
 
 #[cfg(test)]

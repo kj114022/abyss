@@ -1,6 +1,66 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Calculates the Shannon entropy of the content.
+/// Higher entropy implies more complex/random information (dense code).
+/// Low entropy implies repetition (boilerplate).
+pub fn calculate_entropy(content: &str) -> f64 {
+    if content.is_empty() {
+        return 0.0;
+    }
+
+    // We can calculate char-based entropy or token-based.
+    // Char-based is faster and usually sufficient for code density.
+    let mut counts = [0usize; 256];
+    let mut total = 0;
+
+    for byte in content.bytes() {
+        counts[byte as usize] += 1;
+        total += 1;
+    }
+
+    let mut entropy = 0.0;
+    let total_f = total as f64;
+
+    for &count in &counts {
+        if count > 0 {
+            let p = count as f64 / total_f;
+            entropy -= p * p.log2();
+        }
+    }
+
+    entropy
+}
+
+/// Structure to hold scoring metadata for a file
+#[derive(Debug, Default, Clone)]
+pub struct FileScore {
+    pub pagerank: f64,
+    pub entropy: f64,
+    pub churn: i32,
+    pub heuristic: i32,
+    pub tokens: usize,
+}
+
+impl FileScore {
+    pub fn final_score(&self) -> f64 {
+        // Normalize and weight
+        // Heuristic: 0-1000
+        // Churn: 0-200
+        // PageRank: 0.0-1.0 (approx, depends on N)
+        // Entropy: 4.0-6.0 range usually for code
+
+        // Let's scale PageRank to be comparable to 0-100 range?
+        // Or normalize everything.
+        // Let's stick to adding bonuses.
+
+        let rank_bonus = self.pagerank * 1000.0; // Assume 0.01 PR -> 10 points
+        let entropy_bonus = self.entropy * 10.0;
+
+        self.heuristic as f64 + (self.churn as f64) + rank_bonus + entropy_bonus
+    }
+}
+
 /// Semantic Ranking Logic for File Ordering
 ///
 /// Heuristics:
@@ -13,19 +73,22 @@ use std::path::{Path, PathBuf};
 /// 7. Default (500)
 ///
 /// Higher score = Earlier in output.
-pub fn sort_paths(
-    paths: &mut [PathBuf],
-    git_stats: &HashMap<PathBuf, crate::utils::git_stats::GitStats>,
-) {
+/// Sorting using unified FileScore
+pub fn sort_paths(paths: &mut [PathBuf], scores: &HashMap<PathBuf, FileScore>) {
     paths.sort_by(|a, b| {
-        let score_a = score_path(a, git_stats.get(a));
-        let score_b = score_path(b, git_stats.get(b));
-        // Descending order of score
-        score_b.cmp(&score_a).then_with(|| a.cmp(b)) // Tie-break alphabetically
+        let score_a = scores.get(a).map(|s| s.final_score()).unwrap_or(0.0);
+        let score_b = scores.get(b).map(|s| s.final_score()).unwrap_or(0.0);
+
+        // Descending order sort
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.cmp(b))
     });
 }
 
-pub fn score_path(path: &Path, stats: Option<&crate::utils::git_stats::GitStats>) -> i32 {
+/// Calculates the base heuristic score based on filename rules.
+pub fn heuristic_score(path: &Path) -> i32 {
     let filename = path
         .file_name()
         .and_then(|f: &std::ffi::OsStr| f.to_str())
@@ -93,14 +156,6 @@ pub fn score_path(path: &Path, stats: Option<&crate::utils::git_stats::GitStats>
     let depth = components.len() as i32;
     score -= depth * 10;
 
-    // 9. Git Churn Boost
-    // Files changed frequently (high churn) are likely important.
-    // Boost score by churn_score (capped at 200).
-    if let Some(s) = stats {
-        let boost = std::cmp::min(s.churn_score * 5, 200) as i32;
-        score += boost;
-    }
-
     score
 }
 
@@ -119,9 +174,15 @@ mod tests {
             PathBuf::from("unknown.txt"),
         ];
 
-        let git_stats = std::collections::HashMap::new();
+        let mut scores = std::collections::HashMap::new();
+        for path in &paths {
+            scores.insert(path.clone(), FileScore {
+                heuristic: heuristic_score(path),
+                ..Default::default()
+            });
+        }
 
-        sort_paths(&mut paths, &git_stats);
+        sort_paths(&mut paths, &scores);
 
         let filenames: Vec<_> = paths
             .iter()
@@ -148,23 +209,30 @@ mod tests {
 
     #[test]
     fn test_churn_boost() {
-        use crate::utils::git_stats::GitStats;
 
         let mut paths = vec![
             PathBuf::from("regular_core.rs"), // Score 600
             PathBuf::from("churned_util.rs"), // Score 400 + Boost
         ];
 
-        let mut stats = std::collections::HashMap::new();
-        stats.insert(
+        let mut scores = std::collections::HashMap::new();
+        scores.insert(
             PathBuf::from("churned_util.rs"),
-            GitStats {
-                churn_score: 50, // 50 * 5 = 250 boost. Final 650.
+            FileScore {
+                churn: 200, // 50 * 5 = 250, capped at 200.
+                heuristic: 400,
+                ..Default::default()
+            },
+        );
+        scores.insert(
+            PathBuf::from("regular_core.rs"),
+            FileScore {
+                heuristic: 600,
                 ..Default::default()
             },
         );
 
-        sort_paths(&mut paths, &stats);
+        sort_paths(&mut paths, &scores);
 
         // churned_util (650) > regular_core (600)
         assert_eq!(paths[0].to_str().unwrap(), "churned_util.rs");
