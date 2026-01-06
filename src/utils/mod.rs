@@ -9,11 +9,14 @@ pub mod dependencies;
 pub mod git_stats;
 pub mod graph;
 pub mod image;
+pub mod impact;
 pub mod pdf;
 pub mod preflight;
 pub mod privacy;
 pub mod quality;
+pub mod query;
 pub mod rank;
 pub mod summary;
 pub mod tokens;
+
 
