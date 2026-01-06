@@ -156,6 +156,21 @@ struct Args {
     /// Output in Cursor-compatible JSON format
     #[arg(long)]
     cursor: bool,
+
+    /// Context tier: summary, detailed, or full
+    /// - summary: signatures only (~10% size)
+    /// - detailed: interfaces + key implementations (~30% size)
+    /// - full: complete source code (default)
+    #[arg(long, value_name = "TIER")]
+    tier: Option<String>,
+
+    /// Watch mode: regenerate context on file changes
+    #[arg(long)]
+    watch: bool,
+
+    /// Export as portable bundle (JSON or .tar.gz based on extension)
+    #[arg(long, value_name = "PATH")]
+    bundle: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {

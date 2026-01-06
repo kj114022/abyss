@@ -1,6 +1,7 @@
 pub mod abyssignore;
 pub mod ast;
 pub mod binary;
+pub mod bundle;
 pub mod cache;
 pub mod clipboard;
 pub mod compression;
@@ -8,6 +9,7 @@ pub mod concepts;
 pub mod dependencies;
 pub mod git_stats;
 pub mod graph;
+pub mod hierarchy;
 pub mod image;
 pub mod impact;
 pub mod pdf;
@@ -18,5 +20,4 @@ pub mod query;
 pub mod rank;
 pub mod summary;
 pub mod tokens;
-
-
+pub mod watch;
