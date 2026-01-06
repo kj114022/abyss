@@ -152,6 +152,10 @@ struct Args {
     /// Show impact analysis for changed files (use with --diff)
     #[arg(long)]
     show_impact: bool,
+
+    /// Output in Cursor-compatible JSON format
+    #[arg(long)]
+    cursor: bool,
 }
 
 fn main() -> Result<()> {
@@ -279,6 +283,11 @@ fn main() -> Result<()> {
         config.compression_level = abyss::config::CompressionLevel::Light;
     }
     // Else keep config value
+
+    // Handle Cursor format (forces JSON output)
+    if args.cursor {
+        config.output_format = abyss::config::OutputFormat::Json;
+    }
 
     // Handle Remote URL here in the binary layer
     let path_str = config.path.to_string_lossy().to_string();
