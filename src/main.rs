@@ -127,6 +127,14 @@ struct Args {
     /// Gemini preset (1M tokens)
     #[arg(long)]
     gemini: bool,
+
+    /// Show pre-flight analysis without processing (dry run)
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Analyze context quality and exit
+    #[arg(long)]
+    analyze_quality: bool,
 }
 
 fn main() -> Result<()> {
@@ -267,6 +275,44 @@ fn main() -> Result<()> {
     config.is_remote = _temp_dir.is_some();
     // hold temp_dir until end of scope
 
+    // Handle dry-run (pre-flight analysis)
+    if args.dry_run {
+        use abyss::runner::discover_files;
+        
+        let (files, _root, _dropped) = discover_files(&config, None)?;
+        let analysis = abyss::utils::preflight::analyze(&config, &files);
+        println!("{}", analysis);
+        return Ok(());
+    }
+
+    // Handle analyze-quality
+    if args.analyze_quality {
+        use abyss::runner::discover_files;
+        use abyss::utils::quality::analyze_quality;
+        use abyss::utils::graph::DependencyGraph;
+        
+        let (files, root, _dropped) = discover_files(&config, None)?;
+        
+        // Build a simple dependency graph for quality analysis
+        let mut graph = DependencyGraph::new();
+        for path in &files {
+            graph.add_node(path.clone());
+        }
+        
+        // Estimate tokens for each file
+        let file_tokens: Vec<_> = files
+            .iter()
+            .map(|f| {
+                let size = std::fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+                (f.clone(), (size as usize) / 4)
+            })
+            .collect();
+        
+        let quality = analyze_quality(&files, &files, &graph, &file_tokens);
+        println!("{}", quality);
+        return Ok(());
+    }
+
     if args.tui {
         abyss::tui::start_tui(config)?;
     } else {
@@ -275,3 +321,4 @@ fn main() -> Result<()> {
 
     Ok(())
 }
+

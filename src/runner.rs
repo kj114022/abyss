@@ -242,9 +242,14 @@ pub fn discover_files(
         .canonicalize()
         .with_context(|| format!("Failed to find directory: {:?}", config.path))?;
 
+    // Load .abyssignore patterns and merge with config
+    let abyssignore_patterns = crate::utils::abyssignore::load_abyssignore(&root_path);
+    let mut all_ignore_patterns = config.ignore_patterns.clone();
+    all_ignore_patterns.extend(abyssignore_patterns);
+
     // 1. Walk directory with full config
     let walk_config = crate::fs::WalkConfig {
-        ignore_patterns: &config.ignore_patterns,
+        ignore_patterns: &all_ignore_patterns,
         include_patterns: &config.include_patterns,
         max_depth: config.max_depth,
         max_file_size: config.max_file_size,

@@ -1,3 +1,4 @@
+pub mod abyssignore;
 pub mod ast;
 pub mod binary;
 pub mod cache;
@@ -9,7 +10,10 @@ pub mod git_stats;
 pub mod graph;
 pub mod image;
 pub mod pdf;
+pub mod preflight;
 pub mod privacy;
+pub mod quality;
 pub mod rank;
 pub mod summary;
 pub mod tokens;
+
