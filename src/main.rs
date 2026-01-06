@@ -25,7 +25,12 @@ impl From<CliOutputFormat> for OutputFormat {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about="The Ultimate Repository Packer (The Abyss)", long_about = None)]
+#[command(
+    author,
+    version,
+    about = "abyss - The LLM Context Compiler\n\nTransform codebases into semantically-ordered, token-optimized context for LLMs.\n\nFeatures:\n  • Dependency-aware ordering (topological sort)\n  • Architectural centrality (PageRank)\n  • Git intelligence (churn analysis)\n  • AST-aware compression (preserve interfaces)\n  • Token budget optimization (knapsack algorithm)",
+    long_about = None
+)]
 struct Args {
     /// Directory or Remote URL to scan
     path: Option<String>,

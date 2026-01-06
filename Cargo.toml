@@ -1,14 +1,14 @@
 [package]
 name = "abyss"
-version = "2.0.0"
+version = "0.2.0"
 edition = "2024"
-description = "High-performance repository packer for LLM context generation"
+description = "Semantic code compiler for LLM context - intelligently order and optimize codebases for AI consumption"
 authors = ["KJ"]
 publish = false
 repository = "https://github.com/kj/abyss"
 readme = "README.md"
-keywords = ["llm", "context", "repository", "packer", "ai"]
-categories = ["command-line-utilities", "development-tools"]
+keywords = ["llm", "context", "ai", "semantic-analysis", "code-intelligence"]
+categories = ["command-line-utilities", "development-tools", "text-processing"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
