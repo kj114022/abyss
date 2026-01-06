@@ -80,6 +80,14 @@ struct Args {
     #[arg(long)]
     smart: bool,
 
+    /// Compression level: none, light, standard, aggressive
+    /// - none: full source code
+    /// - light: remove comments and extra whitespace
+    /// - standard: remove comments, whitespace, and simple boilerplate
+    /// - aggressive: replace function bodies with placeholders
+    #[arg(long, value_name = "LEVEL")]
+    compress_level: Option<String>,
+
     /// Split output into chunks of N tokens
     #[arg(long)]
     split: Option<usize>,
@@ -254,11 +262,21 @@ fn main() -> Result<()> {
         config.graph = true;
     }
 
-    // Compression Logic merge
-    if args.smart {
+    // Compression Logic merge (with backward compatibility)
+    // Priority: --compress-level > --smart > --compress
+    if let Some(level_str) = &args.compress_level {
+        if let Some(level) = abyss::config::CompressionLevel::from_str(level_str) {
+            config.compression_level = level;
+            config.compression = level.to_compression_mode();
+        } else {
+            eprintln!("Warning: Invalid compression level '{}', using none", level_str);
+        }
+    } else if args.smart {
         config.compression = CompressionMode::Smart;
+        config.compression_level = abyss::config::CompressionLevel::Aggressive;
     } else if args.compress {
         config.compression = CompressionMode::Simple;
+        config.compression_level = abyss::config::CompressionLevel::Light;
     }
     // Else keep config value
 
