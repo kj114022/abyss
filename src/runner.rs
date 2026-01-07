@@ -259,7 +259,7 @@ pub fn process_files(
         }
     };
 
-    // 1. Intelligence Phase (Graph, Scores, Ranking)
+    // Intelligence: Build graph, calculate scores, and rank files before processing content
     let mut git_stats_map = HashMap::new();
     let roots: std::collections::HashSet<_> = files.iter().map(|(_, root)| root.clone()).collect();
     for root in roots {
@@ -579,7 +579,7 @@ pub fn process_files(
         // 4. Consumer
         let mermaid_graph = if config_ref.graph {
             // Only generate graph for the first root or merged?
-            // Merged graph from earlier intelligence phase is better, but here we just re-generate purely for display
+            // Regenerate graph specifically for Mermaid display purposes using the final file list
             // Let's use the files we have.
             let paths_only: Vec<PathBuf> = files.iter().map(|(p, _)| p.clone()).collect();
             // Root path is tricky. Use first root or config path.

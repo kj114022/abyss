@@ -316,7 +316,7 @@ fn run_app<B: ratatui::backend::Backend>(
         while let Ok(event) = rx.try_recv() {
             match event {
                 ScanEvent::StartScanning => {
-                    // Only update status if we are in initial scanning phase
+                    // Update status only during initial scan
                     if state.step == AppStep::Scanning {
                         state.status_message = "SCANNING ACTIVE".to_string();
                         state.add_log("Scan initiated.".to_string());

@@ -205,10 +205,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // 1. Load from file or default
+    // Configuration hierarchy: File < CLI Args
     let mut config = AbyssConfig::load_from_file().unwrap_or_default();
 
-    // 2. Override with CLI args
+    // Override configuration with command-line arguments
     if let Some(p) = args.path {
         config.path = PathBuf::from(p);
     }
@@ -285,8 +285,7 @@ fn main() -> Result<()> {
         config.graph = true;
     }
 
-    // Compression Logic merge (with backward compatibility)
-    // Priority: --compress-level > --smart > --compress
+    // Compression priority: Level (highest) > Smart > Compress (lowest)
     if let Some(level_str) = &args.compress_level {
         if let Some(level) = abyss::config::CompressionLevel::from_str(level_str) {
             config.compression_level = level;
@@ -311,7 +310,7 @@ fn main() -> Result<()> {
         config.output_format = abyss::config::OutputFormat::Json;
     }
 
-    // Handle Remote URL here in the binary layer
+    // Clone remote repositories to temporary directory to ensure uniform local path handling in runner layer
     let path_str = config.path.to_string_lossy().to_string();
     let (_temp_dir, path_buf): (Option<tempfile::TempDir>, PathBuf) = if is_remote_url(&path_str) {
         if config.verbose {
@@ -488,7 +487,7 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Phase 8 Logic
+
 
     if args.explain_diff {
         use abyss::utils::diff_explainer::DiffExplainer;
