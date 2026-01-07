@@ -1,15 +1,19 @@
 [package]
-name = "abyss"
+name = "abyss-cli"
 version = "2.0.1"
 edition = "2024"
 description = "Semantic code compiler for LLM context - intelligently order and optimize codebases for AI consumption"
 authors = ["KJ"]
 license = "MIT"
-# publish = true (implied default, or explicit)
+publish = true
 repository = "https://github.com/kj/abyss"
 readme = "README.md"
 keywords = ["llm", "context", "ai", "semantic-analysis", "code-intelligence"]
 categories = ["command-line-utilities", "development-tools", "text-processing"]
+
+[[bin]]
+name = "abyss"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
