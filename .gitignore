@@ -19,6 +19,7 @@ Cargo.lock
 # Node
 node_modules/
 npm/node_modules/
+vscode-extension/node_modules/
 npm-debug.log
 yarn-error.log
 
