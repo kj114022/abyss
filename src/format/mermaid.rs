@@ -21,7 +21,7 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
     let mut lines = Vec::new();
     lines.push("graph TD;".to_string());
 
-    // 1. Assign IDs
+    // Assign unique IDs for safe Mermaid syntax
     let mut path_to_id = HashMap::new();
     let mut sorted_nodes: Vec<_> = nodes.iter().collect();
     sorted_nodes.sort();
@@ -30,10 +30,7 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
         path_to_id.insert((*path).clone(), format!("N{}", i));
     }
 
-    // 2. Build Hierarchy (Directory Tree)
-    // Map: Dir -> List of Files (that are nodes)
-    // And Dir -> List of Subdirs
-    // Build hierarchy: directory -> files mapping
+    // Build hierarchy for subgraph generation
     let mut hierarchy: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
     let mut dirs: HashSet<PathBuf> = HashSet::new();
 
@@ -60,24 +57,6 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
             }
         }
     }
-
-    // Sort directories for deterministic output
-    let mut sorted_dirs: Vec<_> = dirs.into_iter().collect();
-    sorted_dirs.sort();
-
-    // Mermaid subgraphs are flat-ish if we define them by ID.
-    // But nesting requires `subgraph A [Block] \n subgraph B [Inner] ... end \n end`
-    // This is hard to do with just a flat list of dirs.
-    // Alternative: Just use full path as subgraph id? `subgraph src_utils ["src/utils"]`
-    // Mermaid doesn't strictly mandate physical nesting in text if IDs are used?
-    // Actually, physically nesting blocks in text is how you define hierarchy in Mermaid.
-
-    // Recursive approach:
-    // Function `write_dir(current_dir)`
-    //   `subgraph current_dir_id [current_dir_name]`
-    //   List files in this dir
-    //   List sub-directories (recurse)
-    //   `end`
 
     // Build directory tree structure
     #[derive(Default)]
@@ -129,10 +108,6 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
                     _ => "other",
                 };
 
-                // We will define classes at the end.
-                // For now just node definition.
-                // Escape name
-                let clean_name = name.replace("\"", "'");
                 lines.push(format!(
                     "{}{}[\"{}\"]:::{}",
                     spaces, id, clean_name, style_class
@@ -185,7 +160,7 @@ pub fn generate_diagram(graph: &DependencyGraph, root: &Path) -> String {
         }
     }
 
-    // 4. Styles
+    // Define styles
     lines.push("    classDef rust fill:#dea,stroke:#555,stroke-width:1px;".to_string());
     lines.push("    classDef python fill:#ade,stroke:#555,stroke-width:1px;".to_string());
     lines.push("    classDef js fill:#ee9,stroke:#555,stroke-width:1px;".to_string());
