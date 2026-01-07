@@ -4,7 +4,7 @@ const https = require('https');
 const os = require('os');
 const { execSync } = require('child_process');
 
-const VERSION = '1.0.0'; // Must match Cargo.toml
+const VERSION = '2.0.0'; // Must match Cargo.toml
 const BIN_NAME = 'abyss';
 const REPO = 'kj/abyss';
 
