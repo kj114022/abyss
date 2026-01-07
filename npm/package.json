@@ -13,7 +13,7 @@
     "url": "git+https://github.com/kj/abyss.git"
   },
   "author": "KJ",
-  "license": "Proprietary",
+  "license": "MIT",
   "os": [
     "darwin",
     "linux",
