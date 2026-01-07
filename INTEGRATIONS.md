@@ -27,11 +27,10 @@ Each LLM has different context windows and optimal formats. Here's how to use ab
 
 | Platform | Context Window | Recommended Setup |
 |----------|---------------|-------------------|
-| GPT-4 Turbo | 128K tokens | `--gpt --format markdown` |
-| GPT-4o | 128K tokens | `--gpt --format markdown` |
-| Claude 3.5 | 200K tokens | `--claude --format xml` |
-| Gemini 1.5 Pro | 1M tokens | `--gemini --format markdown` |
-| Grok | 128K tokens | `--gpt --format markdown` |
+| GPT | ~ 128K tokens | `--gpt --format markdown` |
+| Claude | ~ 200K tokens | `--claude --format xml` |
+| Gemini | ~ 1M tokens | `--gemini --format markdown` |
+| Grok | ~ 128K tokens | `--gpt --format markdown` |
 
 ---
 
@@ -40,7 +39,7 @@ Each LLM has different context windows and optimal formats. Here's how to use ab
 ### Quick Start
 
 ```bash
-# GPT-4 optimized (128K tokens)
+# GPT optimized (128K tokens)
 abyss . --gpt -o context.md
 
 # With query focus
@@ -81,7 +80,7 @@ subprocess.run(["abyss", ".", "--gpt", "-o", "context.md"])
 context = Path("context.md").read_text()
 
 response = openai.ChatCompletion.create(
-    model="gpt-4-turbo-preview",
+    model="gpt",
     messages=[
         {"role": "system", "content": "You are a code expert. Use the provided codebase context to answer questions."},
         {"role": "user", "content": f"Codebase context:\n\n{context}\n\nHow does error handling work?"}
@@ -139,7 +138,7 @@ subprocess.run(["abyss", ".", "--claude", "-o", "context.xml"])
 context = Path("context.xml").read_text()
 
 response = client.messages.create(
-    model="claude-3-5-sonnet-20240620",
+    model="claude-sonnet-20240620",
     max_tokens=4096,
     messages=[
         {
@@ -169,7 +168,7 @@ abyss . --gemini --max-tokens 500000 -o detailed.md
 
 ### Why Gemini is Special
 
-Gemini 1.5 Pro's 1M token context window means you can include your ENTIRE codebase:
+Gemini Pro's 1M token context window means you can include your ENTIRE codebase:
 
 ```bash
 # Include absolutely everything
@@ -219,7 +218,7 @@ response = model.generate_content(
 ### Quick Start
 
 ```bash
-# Grok optimized (similar to GPT-4)
+# Grok optimized (similar to ChatGPT)
 abyss . --gpt -o context.md
 
 # With wit (Grok appreciates concise context)
@@ -354,7 +353,7 @@ ctx-ask() {
 
 ```bash
 # Platform-specific
-ctx-gpt                         # GPT-4 optimized
+ctx-gpt                         # ChatGPT optimized
 ctx-claude                      # Claude optimized
 ctx-gemini                      # Gemini (full context)
 ctx-grok                        # Grok optimized
