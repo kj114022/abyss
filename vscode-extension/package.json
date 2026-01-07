@@ -1,0 +1,64 @@
+{
+  "name": "abyss-vscode",
+  "displayName": "Abyss AI Context",
+  "description": "Generate LLM-optimized context for your code within VS Code using Abyss.",
+  "version": "2.0.1",
+  "publisher": "KJ22",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kj/abyss.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "abyss.generateContext",
+        "title": "Abyss: Generate Context"
+      },
+      {
+        "command": "abyss.generateClipboard",
+        "title": "Abyss: Generate Context (Clipboard)"
+      }
+    ],
+    "configuration": {
+      "title": "Abyss",
+      "properties": {
+        "abyss.format": {
+          "type": "string",
+          "enum": [
+            "xml",
+            "markdown",
+            "json",
+            "plain"
+          ],
+          "default": "markdown",
+          "description": "Output format for the generated context."
+        },
+        "abyss.maxTokens": {
+          "type": "number",
+          "default": 128000,
+          "description": "Maximum token count (default: 128k for GPT-4)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "tsc -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.x",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}
