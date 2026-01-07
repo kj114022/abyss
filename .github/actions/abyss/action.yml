@@ -67,7 +67,7 @@ runs:
   using: 'composite'
   steps:
     - name: Install Rust
-      uses: dtolnay/rust-action@stable
+      uses: dtolnay/rust-toolchain@stable
       
     - name: Install abyss
       shell: bash

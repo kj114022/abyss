@@ -88,12 +88,9 @@ pub fn analyze_quality(
     file_tokens: &[(PathBuf, usize)],
 ) -> QualityScore {
     // Dependency coverage: what % of graph nodes are in selected files
-    let selected_set: HashSet<_> = selected_files.iter().collect();
+    let _selected_set: HashSet<&PathBuf> = selected_files.iter().collect();
     let graph_nodes = graph.node_count();
-    let covered_nodes = selected_files
-        .iter()
-        .filter(|f| graph.has_node(f))
-        .count();
+    let covered_nodes = selected_files.iter().filter(|f| graph.has_node(f)).count();
     let dependency_coverage = if graph_nodes > 0 {
         covered_nodes as f64 / graph_nodes as f64
     } else {

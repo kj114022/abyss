@@ -124,7 +124,7 @@ struct Args {
     #[arg(long, value_name = "SHELL")]
     completions: Option<String>,
 
-    /// GPT-4 preset (128K tokens)
+    /// ChatGPT preset (128K tokens)
     #[arg(long)]
     gpt: bool,
 
@@ -171,6 +171,10 @@ struct Args {
     /// Export as portable bundle (JSON or .tar.gz based on extension)
     #[arg(long, value_name = "PATH")]
     bundle: Option<PathBuf>,
+
+    /// Explain the semantics of the diff
+    #[arg(long)]
+    explain_diff: bool,
 }
 
 fn main() -> Result<()> {
@@ -288,7 +292,10 @@ fn main() -> Result<()> {
             config.compression_level = level;
             config.compression = level.to_compression_mode();
         } else {
-            eprintln!("Warning: Invalid compression level '{}', using none", level_str);
+            eprintln!(
+                "Warning: Invalid compression level '{}', using none",
+                level_str
+            );
         }
     } else if args.smart {
         config.compression = CompressionMode::Smart;
@@ -329,8 +336,9 @@ fn main() -> Result<()> {
     // Handle dry-run (pre-flight analysis)
     if args.dry_run {
         use abyss::runner::discover_files;
-        
-        let (files, _root, _dropped) = discover_files(&config, None)?;
+
+        let (files_res, _dropped) = discover_files(&config, None)?;
+        let files: Vec<PathBuf> = files_res.into_iter().map(|(p, _)| p).collect();
         let analysis = abyss::utils::preflight::analyze(&config, &files);
         println!("{}", analysis);
         return Ok(());
@@ -339,17 +347,18 @@ fn main() -> Result<()> {
     // Handle analyze-quality
     if args.analyze_quality {
         use abyss::runner::discover_files;
-        use abyss::utils::quality::analyze_quality;
         use abyss::utils::graph::DependencyGraph;
-        
-        let (files, root, _dropped) = discover_files(&config, None)?;
-        
+        use abyss::utils::quality::analyze_quality;
+
+        let (files_res, _dropped) = discover_files(&config, None)?;
+        let files: Vec<PathBuf> = files_res.into_iter().map(|(p, _)| p).collect();
+
         // Build a simple dependency graph for quality analysis
         let mut graph = DependencyGraph::new();
         for path in &files {
             graph.add_node(path.clone());
         }
-        
+
         // Estimate tokens for each file
         let file_tokens: Vec<_> = files
             .iter()
@@ -358,7 +367,7 @@ fn main() -> Result<()> {
                 (f.clone(), (size as usize) / 4)
             })
             .collect();
-        
+
         let quality = analyze_quality(&files, &files, &graph, &file_tokens);
         println!("{}", quality);
         return Ok(());
@@ -367,11 +376,13 @@ fn main() -> Result<()> {
     // Handle query-driven context
     if let Some(query_str) = &args.query {
         use abyss::runner::discover_files;
-        use abyss::utils::query::QueryEngine;
         use abyss::utils::graph::DependencyGraph;
+        use abyss::utils::query::QueryEngine;
         use std::collections::HashMap;
 
-        let (files, root, _dropped) = discover_files(&config, None)?;
+        let (files_res, _dropped) = discover_files(&config, None)?;
+        let files: Vec<PathBuf> = files_res.into_iter().map(|(p, _)| p).collect();
+        let root = &config.path; // Use config path as main root for display logic
 
         // Build dependency graph for PageRank
         let mut graph = DependencyGraph::new();
@@ -400,9 +411,13 @@ fn main() -> Result<()> {
         let max_tokens = config.max_tokens.unwrap_or(100_000);
         let relevant = engine.get_files_within_budget(&files, max_tokens, &file_tokens);
 
-        println!("Found {} relevant files (within {} token budget):", relevant.len(), max_tokens);
+        println!(
+            "Found {} relevant files (within {} token budget):",
+            relevant.len(),
+            max_tokens
+        );
         for (i, file) in relevant.iter().enumerate().take(20) {
-            let rel_path = file.strip_prefix(&root).unwrap_or(file);
+            let rel_path = file.strip_prefix(root).unwrap_or(file);
             println!("  {}. {}", i + 1, rel_path.display());
         }
         if relevant.len() > 20 {
@@ -424,11 +439,13 @@ fn main() -> Result<()> {
     // Handle impact analysis
     if args.show_impact {
         use abyss::runner::discover_files;
-        use abyss::utils::impact::ImpactAnalyzer;
-        use abyss::utils::graph::DependencyGraph;
         use abyss::utils::git_stats::get_diff_files;
+        use abyss::utils::graph::DependencyGraph;
+        use abyss::utils::impact::ImpactAnalyzer;
 
-        let (files, root, _dropped) = discover_files(&config, None)?;
+        let (files_res, _dropped) = discover_files(&config, None)?;
+        let files: Vec<PathBuf> = files_res.into_iter().map(|(p, _)| p).collect();
+        let root = &config.path;
 
         // Build dependency graph
         let mut graph = DependencyGraph::new();
@@ -438,8 +455,9 @@ fn main() -> Result<()> {
                 let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
                 let imports = abyss::utils::dependencies::extract_imports(&content, extension);
                 for import in imports {
+                    // Try to resolve using CLI root. For complex multi-repo, this visualization might be limited.
                     if let Some(dep_path) =
-                        abyss::utils::dependencies::resolve_import(&import, path, &root)
+                        abyss::utils::dependencies::resolve_import(&import, path, root)
                     {
                         graph.add_edge(path.clone(), dep_path);
                     }
@@ -449,7 +467,7 @@ fn main() -> Result<()> {
 
         // Get changed files from diff
         let diff_target = config.diff.as_deref().unwrap_or("HEAD~1");
-        let changed_files = match get_diff_files(&root, diff_target) {
+        let changed_files = match get_diff_files(root, diff_target) {
             Some(files) => files.into_iter().map(|s| root.join(s)).collect::<Vec<_>>(),
             None => {
                 eprintln!("Could not get diff files. Use --diff to specify a reference.");
@@ -470,8 +488,99 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Phase 8 Logic
+
+    if args.explain_diff {
+        use abyss::utils::diff_explainer::DiffExplainer;
+        match DiffExplainer::explain(&config) {
+            Ok(explanation) => println!("{}", explanation),
+            Err(e) => eprintln!("Failed to explain diff: {}", e),
+        }
+        return Ok(());
+    }
+
+    // Tier
+    if let Some(tier) = args.tier {
+        let level = match tier.to_lowercase().as_str() {
+            "summary" => abyss::config::CompressionLevel::Aggressive,
+            "detailed" => abyss::config::CompressionLevel::Standard,
+            "full" | "none" => abyss::config::CompressionLevel::None,
+            _ => {
+                eprintln!("Invalid tier: {}. Using standard.", tier);
+                abyss::config::CompressionLevel::Standard
+            }
+        };
+        config.compression_level = level;
+    }
+
+    // Bundle
+    if let Some(bundle_path) = args.bundle {
+        config.bundle = Some(bundle_path);
+    }
+
     if args.tui {
         abyss::tui::start_tui(config)?;
+    } else if args.watch {
+        // Watch Mode
+        use abyss::utils::watch::{Debouncer, FileWatcher, WatchEvent};
+        use std::time::Duration;
+
+        let watcher = match FileWatcher::new(&config.path) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("Failed to create file watcher: {}", e);
+                return Ok(());
+            }
+        };
+
+        let mut debouncer = Debouncer::new(Duration::from_millis(1500));
+
+        println!("Starting initial scan...");
+        if let Err(e) = run(config.clone()) {
+            eprintln!("Error during initial scan: {}", e);
+        }
+
+        println!(
+            "Watching for changes in {:?}... (Ctrl+C to stop)",
+            config.path
+        );
+
+        loop {
+            // Check for events with 500ms timeout
+            if let Some(event) = watcher.next_event(Duration::from_millis(500)) {
+                match event {
+                    WatchEvent::Modified(path) | WatchEvent::Created(path) => {
+                        if debouncer.should_process(&path) {
+                            println!(
+                                "Change detected: {:?}. Regenerating...",
+                                path.file_name().unwrap_or_default()
+                            );
+                            if let Err(e) = run(config.clone()) {
+                                eprintln!("Error during scan: {}", e);
+                            }
+                            println!("Waiting for changes...");
+                        }
+                    }
+                    WatchEvent::Deleted(path) => {
+                        if debouncer.should_process(&path) {
+                            println!(
+                                "File deleted: {:?}. Regenerating...",
+                                path.file_name().unwrap_or_default()
+                            );
+                            if let Err(e) = run(config.clone()) {
+                                eprintln!("Error during scan: {}", e);
+                            }
+                            println!("Waiting for changes...");
+                        }
+                    }
+                    WatchEvent::Error(e) => {
+                        eprintln!("Watch error: {}", e);
+                    }
+                }
+            }
+            // Periodic cleanup of debouncer
+            debouncer.cleanup();
+        }
     } else {
         run(config)?;
     }

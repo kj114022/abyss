@@ -156,6 +156,24 @@ pub fn heuristic_score(path: &Path) -> i32 {
     score
 }
 
+/// Sorts files using topological order from the dependency graph,
+/// with score-based tie-breaking for files at the same dependency level.
+pub fn sort_files(
+    _paths: &[PathBuf],
+    scores: &HashMap<PathBuf, FileScore>,
+    graph: &crate::utils::graph::DependencyGraph,
+) -> Vec<PathBuf> {
+    graph.sort_topologically(|a, b| {
+        let score_a = scores.get(a).map(|s| s.final_score()).unwrap_or(0.0);
+        let score_b = scores.get(b).map(|s| s.final_score()).unwrap_or(0.0);
+        // Descending score (higher score first)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.cmp(b))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

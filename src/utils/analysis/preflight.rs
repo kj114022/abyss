@@ -68,10 +68,7 @@ pub fn analyze(config: &AbyssConfig, files: &[PathBuf]) -> PreflightAnalysis {
             let tokens = (size as usize) / 4;
             (size, tokens)
         })
-        .reduce(
-            || (0, 0),
-            |(s1, t1), (s2, t2)| (s1 + s2, t1 + t2),
-        );
+        .reduce(|| (0, 0), |(s1, t1), (s2, t2)| (s1 + s2, t1 + t2));
 
     // Time estimate: ~100 files/sec for scanning, slower for large files
     let estimated_time_secs = (total_files as f64 / 100.0).max(0.5);
@@ -115,24 +112,24 @@ pub fn analyze(config: &AbyssConfig, files: &[PathBuf]) -> PreflightAnalysis {
     }
 
     // Check for git diff opportunity
-    if config.diff.is_none() && total_files > 100 {
-        if let Ok(git_dir) = config.path.join(".git").canonicalize() {
-            if git_dir.exists() {
-                recommendations.push("Use --diff main to scan only changed files".into());
-            }
-        }
+    if config.diff.is_none()
+        && total_files > 100
+        && let Ok(git_dir) = config.path.join(".git").canonicalize()
+        && git_dir.exists()
+    {
+        recommendations.push("Use --diff main to scan only changed files".into());
     }
 
     // Token budget warning
-    if let Some(max) = config.max_tokens {
-        if estimated_tokens > max * 2 {
-            recommendations.push(format!(
-                "Estimated tokens ({}) exceed budget ({}) by {}x - many files will be dropped",
-                format_number(estimated_tokens),
-                format_number(max),
-                estimated_tokens / max
-            ));
-        }
+    if let Some(max) = config.max_tokens
+        && estimated_tokens > max * 2
+    {
+        recommendations.push(format!(
+            "Estimated tokens ({}) exceed budget ({}) by {}x - many files will be dropped",
+            format_number(estimated_tokens),
+            format_number(max),
+            estimated_tokens / max
+        ));
     }
 
     PreflightAnalysis {

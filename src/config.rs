@@ -45,7 +45,7 @@ impl CompressionLevel {
             CompressionLevel::Aggressive => CompressionMode::Smart,
         }
     }
-    
+
     /// Parse from string (for CLI)
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
@@ -71,6 +71,7 @@ impl std::fmt::Display for CompressionLevel {
 
 /// Main configuration for abyss
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AbyssConfig {
     /// Path to the repository or file to scan
     pub path: PathBuf,
@@ -113,6 +114,30 @@ pub struct AbyssConfig {
     pub diff: Option<String>,
     /// Include Mermaid dependency graph in output
     pub graph: bool,
+    /// Path to export portable bundle
+    pub bundle: Option<PathBuf>,
+    /// Generate semantic explanation of diffs
+    pub explain_diff: bool,
+}
+
+/// Workspace configuration for multi-repository merging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceConfig {
+    /// List of repositories to include
+    pub repositories: Vec<WorkspaceRepo>,
+    /// Global output configuration
+    pub output: Option<PathBuf>,
+}
+
+/// A repository within a workspace
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceRepo {
+    /// Path to the repository
+    pub path: PathBuf,
+    /// Optional name (prefix) for files from this repo
+    pub name: Option<String>,
+    /// Priority weight for token budget allocation (default: 1.0)
+    pub weight: Option<f64>,
 }
 
 impl AbyssConfig {
@@ -251,6 +276,8 @@ impl Default for AbyssConfig {
             redact: false,
             diff: None,
             graph: false,
+            bundle: None,
+            explain_diff: false,
         }
     }
 }
@@ -282,6 +309,8 @@ mod tests {
             diff: None,
             graph: false,
             max_tokens: None,
+            bundle: None,
+            explain_diff: false,
         };
         assert!(config.validate().is_err());
     }

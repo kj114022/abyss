@@ -7,8 +7,12 @@ lazy_static! {
     static ref SECRET_PATTERNS: Vec<Regex> = vec![
         // Generic "key": "value" pattern for secrets
         Regex::new(r#"(?i)(api[_-]?key|password|secret|token|access[_-]?key|auth[_-]?token)[\"']?\s*[:=]\s*[\"'](?P<secret>[^\"']{8,})[\"']"#).unwrap(),
+        // OpenAI / Stripe Secret Key (sk-...)
+        Regex::new(r#"(?P<secret>sk-[a-zA-Z0-9]{20,})"#).unwrap(),
         // AWS Secret Key
         Regex::new(r#"(?i)aws_secret_access_key\s*=\s*(?P<secret>[A-Za-z0-9/+=]{40})"#).unwrap(),
+        // AWS Access Key ID (AKIA...)
+        Regex::new(r#"(?P<secret>(AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16})"#).unwrap(),
         // Private Key Header
         Regex::new(r#"(?i)-{5}BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-{5}"#).unwrap(),
     ];

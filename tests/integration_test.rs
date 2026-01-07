@@ -37,6 +37,9 @@ fn test_end_to_end_scan() -> anyhow::Result<()> {
         diff: None,
         max_tokens: None,
         graph: false,
+        compression_level: abyss::config::CompressionLevel::None,
+        bundle: None,
+        explain_diff: false,
     };
 
     run(config)?;
@@ -82,6 +85,9 @@ fn test_compression_integration() -> anyhow::Result<()> {
         diff: None,
         max_tokens: None,
         graph: false,
+        compression_level: abyss::config::CompressionLevel::None,
+        bundle: None,
+        explain_diff: false,
     };
 
     run(config)?;
@@ -120,6 +126,9 @@ fn test_prompt_integration() -> anyhow::Result<()> {
         diff: None,
         max_tokens: None,
         graph: false,
+        compression_level: abyss::config::CompressionLevel::None,
+        bundle: None,
+        explain_diff: false,
     };
 
     run(config)?;

@@ -87,7 +87,7 @@ pub fn compress_standard(content: &str) -> String {
 /// Aggressive compression: Replace function bodies with placeholders
 pub fn compress_aggressive(content: &str, extension: &str) -> String {
     // Use AST-aware compression if available for this language
-    crate::utils::ast::compress_ast(content, extension)
+    super::ast::compress_ast(content, extension)
 }
 
 /// Legacy function for backward compatibility
@@ -154,10 +154,10 @@ mod tests {
     #[test]
     fn test_compression_levels() {
         let code = "fn get_x(&self) -> i32 { self.x }";
-        
+
         let none = compress_by_level(code, CompressionLevel::None, "rs");
         assert_eq!(none, code);
-        
+
         let light = compress_by_level(code, CompressionLevel::Light, "rs");
         assert!(light.contains("get_x"));
     }
@@ -170,4 +170,3 @@ mod tests {
         assert!(ratio > 0.3); // Should be significant compression
     }
 }
-
