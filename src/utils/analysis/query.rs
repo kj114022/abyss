@@ -12,31 +12,54 @@ use crate::utils::graph::DependencyGraph;
 
 /// Stopwords to filter from queries (common English words)
 const STOPWORDS: &[&str] = &[
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could", "should",
-    "may", "might", "must", "shall", "can", "need", "dare", "ought", "used",
-    "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into",
-    "through", "during", "before", "after", "above", "below", "between",
-    "and", "but", "or", "nor", "so", "yet", "both", "either", "neither",
-    "not", "only", "own", "same", "than", "too", "very", "just",
-    "how", "what", "when", "where", "why", "which", "who", "whom",
-    "this", "that", "these", "those", "i", "you", "he", "she", "it", "we", "they",
-    "me", "him", "her", "us", "them", "my", "your", "his", "its", "our", "their",
-    "work", "works", "does", "file", "files", "code", "function", "class",
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
+    "can", "need", "dare", "ought", "used", "to", "of", "in", "for", "on", "with", "at", "by",
+    "from", "as", "into", "through", "during", "before", "after", "above", "below", "between",
+    "and", "but", "or", "nor", "so", "yet", "both", "either", "neither", "not", "only", "own",
+    "same", "than", "too", "very", "just", "how", "what", "when", "where", "why", "which", "who",
+    "whom", "this", "that", "these", "those", "i", "you", "he", "she", "it", "we", "they", "me",
+    "him", "her", "us", "them", "my", "your", "his", "its", "our", "their", "work", "works",
+    "does", "file", "files", "code", "function", "class",
 ];
 
 /// Technical synonyms for common programming concepts
 fn get_synonyms(word: &str) -> Vec<&'static str> {
     match word.to_lowercase().as_str() {
-        "auth" | "authentication" | "authenticate" => vec!["auth", "login", "session", "credential", "token", "jwt", "oauth"],
-        "login" | "signin" | "sign-in" => vec!["login", "auth", "signin", "session", "authenticate"],
-        "database" | "db" => vec!["database", "db", "sql", "query", "model", "schema", "migration"],
+        "auth" | "authentication" | "authenticate" => vec![
+            "auth",
+            "login",
+            "session",
+            "credential",
+            "token",
+            "jwt",
+            "oauth",
+        ],
+        "login" | "signin" | "sign-in" => {
+            vec!["login", "auth", "signin", "session", "authenticate"]
+        }
+        "database" | "db" => vec![
+            "database",
+            "db",
+            "sql",
+            "query",
+            "model",
+            "schema",
+            "migration",
+        ],
         "api" | "endpoint" => vec!["api", "endpoint", "route", "handler", "controller", "rest"],
         "test" | "testing" => vec!["test", "spec", "mock", "assert", "expect"],
         "config" | "configuration" => vec!["config", "settings", "env", "environment", "options"],
         "error" | "exception" => vec!["error", "exception", "panic", "fail", "catch", "throw"],
         "user" | "account" => vec!["user", "account", "profile", "member"],
-        "payment" | "billing" => vec!["payment", "billing", "stripe", "charge", "invoice", "subscription"],
+        "payment" | "billing" => vec![
+            "payment",
+            "billing",
+            "stripe",
+            "charge",
+            "invoice",
+            "subscription",
+        ],
         "cache" | "caching" => vec!["cache", "redis", "memcache", "memoize"],
         _ => vec![],
     }
@@ -113,6 +136,7 @@ impl std::fmt::Display for FileRelevance {
 /// Query engine for finding relevant files
 pub struct QueryEngine<'a> {
     analysis: QueryAnalysis,
+    #[allow(dead_code)]
     graph: &'a DependencyGraph,
     pagerank: HashMap<PathBuf, f64>,
 }
@@ -202,7 +226,11 @@ impl<'a> QueryEngine<'a> {
     /// Get top N most relevant files
     pub fn get_top_files(&self, files: &[PathBuf], limit: usize) -> Vec<PathBuf> {
         let mut scored = self.score_files(files);
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         scored.into_iter().take(limit).map(|r| r.path).collect()
     }
@@ -215,7 +243,11 @@ impl<'a> QueryEngine<'a> {
         file_tokens: &HashMap<PathBuf, usize>,
     ) -> Vec<PathBuf> {
         let mut scored = self.score_files(files);
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut selected = Vec::new();
         let mut used_tokens = 0;

@@ -44,15 +44,15 @@ pub fn start_tui(mut config: AbyssConfig) -> Result<()> {
         // Start Discovery Thread
         let (tx, rx): (Sender<ScanEvent>, Receiver<ScanEvent>) = unbounded();
         // Channel for Discovery Result
-        let (result_tx, result_rx) = unbounded::<(Vec<PathBuf>, PathBuf)>();
+        let (result_tx, result_rx) = unbounded::<Vec<(PathBuf, PathBuf)>>();
 
         let config_clone = config.clone();
         let tx_clone = tx.clone();
 
         thread::spawn(
             move || match discover_files(&config_clone, Some(tx_clone.clone())) {
-                Ok((paths, root, _dropped)) => {
-                    let _ = result_tx.send((paths, root));
+                Ok((files_with_roots, _dropped)) => {
+                    let _ = result_tx.send(files_with_roots);
                 }
                 Err(e) => {
                     let _ = tx_clone.send(ScanEvent::Error(e.to_string()));
@@ -94,12 +94,12 @@ fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     state: &mut AppState,
     rx: Receiver<ScanEvent>,
-    result_rx: Receiver<(Vec<PathBuf>, PathBuf)>,
+    result_rx: Receiver<Vec<(PathBuf, PathBuf)>>,
     _config: AbyssConfig,
     tx: Sender<ScanEvent>, // Needed to pass to process_files thread later
 ) -> io::Result<TuiAction> {
     // Store discovery result locally until confirmed
-    let mut pending_discovery: Option<(Vec<PathBuf>, PathBuf)> = None;
+    let mut pending_discovery: Option<Vec<(PathBuf, PathBuf)>> = None;
 
     loop {
         state.on_tick();
@@ -226,7 +226,7 @@ fn run_app<B: ratatui::backend::Backend>(
                                 KeyCode::Enter => {
                                     #[allow(clippy::collapsible_if)]
                                     if state.step == AppStep::FileSelection {
-                                        if let Some((_, root)) = &pending_discovery {
+                                        if let Some(files_with_roots) = &pending_discovery {
                                             // Transition to Processing
                                             state.step = AppStep::Processing;
                                             state.scanned_files.clear();
@@ -240,17 +240,23 @@ fn run_app<B: ratatui::backend::Backend>(
                                                     Vec::new()
                                                 };
 
-                                            state.total_files = selected_paths.len();
+                                            // Build files_to_process with roots
+                                            let files_to_process: Vec<(PathBuf, PathBuf)> =
+                                                files_with_roots
+                                                    .iter()
+                                                    .filter(|(p, _)| selected_paths.contains(p))
+                                                    .cloned()
+                                                    .collect();
+
+                                            state.total_files = files_to_process.len();
 
                                             // Spawn processing thread
-                                            let root_clone = root.clone();
                                             let config_clone = state.config.clone();
                                             let tx_clone = tx.clone();
                                             thread::spawn(move || {
                                                 if let Err(e) = process_files(
-                                                    selected_paths,
+                                                    files_to_process,
                                                     vec![],
-                                                    root_clone,
                                                     config_clone,
                                                     Some(tx_clone.clone()),
                                                 ) {
@@ -291,15 +297,19 @@ fn run_app<B: ratatui::backend::Backend>(
         }
 
         // Check for Discovery Result
-        if let Ok((paths, root)) = result_rx.try_recv() {
+        if let Ok(files_with_roots) = result_rx.try_recv() {
             state.step = AppStep::FileSelection;
             state.status_message =
                 "SELECT FILES (Nav: Arrow or j/k/h/l, Space: Toggle, Enter: Process)".to_string();
 
+            // Extract just paths for UI display
+            let paths: Vec<PathBuf> = files_with_roots.iter().map(|(p, _)| p.clone()).collect();
+            // Use config.path as display root
+            let display_root = state.config.path.clone();
             state.discovered_paths = paths.clone();
-            state.file_tree = Some(build_tree(&root, paths));
+            state.file_tree = Some(build_tree(&display_root, paths));
             state.total_files = state.discovered_paths.len();
-            pending_discovery = Some((state.discovered_paths.clone(), root));
+            pending_discovery = Some(files_with_roots);
         }
 
         // Handle Events

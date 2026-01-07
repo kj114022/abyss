@@ -76,6 +76,7 @@ impl Bundle {
             .map(|s| s.trim().to_string());
 
         let metadata = BundleMetadata {
+            // Bundle format version (independent of CLI version)
             version: "1.0".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
             git_commit,
@@ -119,8 +120,8 @@ impl Bundle {
 
     /// Save bundle as compressed tarball
     pub fn save_tar_gz(&self, path: &Path) -> Result<(), String> {
-        use flate2::write::GzEncoder;
         use flate2::Compression;
+        use flate2::write::GzEncoder;
 
         let file =
             fs::File::create(path).map_err(|e| format!("Failed to create bundle file: {}", e))?;
@@ -202,7 +203,8 @@ mod tests {
     #[test]
     fn test_bundle_with_summary() {
         let files = vec![(PathBuf::from("test.rs"), "test".to_string())];
-        let bundle = Bundle::new(files, None, "none", None).with_summary("Test summary".to_string());
+        let bundle =
+            Bundle::new(files, None, "none", None).with_summary("Test summary".to_string());
 
         assert_eq!(bundle.summary, Some("Test summary".to_string()));
     }

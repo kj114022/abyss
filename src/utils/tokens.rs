@@ -6,10 +6,10 @@ use tiktoken_rs::cl100k_base;
 pub fn estimate_tokens(text: &str) -> usize {
     // Heuristic: code averages ~4 characters per token
     let char_estimate = text.len() / 4;
-    
+
     // Also consider whitespace-delimited words as a floor
     let word_estimate = text.split_whitespace().count();
-    
+
     // Take the max as conservative estimate
     char_estimate.max(word_estimate)
 }
@@ -73,4 +73,3 @@ mod tests {
         assert!(accurate > 0);
     }
 }
-

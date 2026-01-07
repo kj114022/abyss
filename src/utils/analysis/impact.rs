@@ -103,6 +103,7 @@ fn risk_level(score: f64) -> &'static str {
 
 /// Impact analyzer for code changes
 pub struct ImpactAnalyzer<'a> {
+    #[allow(dead_code)]
     graph: &'a DependencyGraph,
     /// Reverse dependency map (who depends on me?)
     reverse_deps: HashMap<PathBuf, HashSet<PathBuf>>,
@@ -229,7 +230,14 @@ impl<'a> ImpactAnalyzer<'a> {
         }
 
         // Factor 3: Critical file patterns
-        let critical_patterns = ["config", "auth", "security", "payment", "database", "migration"];
+        let critical_patterns = [
+            "config",
+            "auth",
+            "security",
+            "payment",
+            "database",
+            "migration",
+        ];
         let has_critical = changed.iter().any(|p| {
             let name = p.to_string_lossy().to_lowercase();
             critical_patterns.iter().any(|pat| name.contains(pat))

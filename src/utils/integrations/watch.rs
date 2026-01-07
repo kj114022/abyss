@@ -2,9 +2,9 @@
 //!
 //! Monitors file changes and regenerates context incrementally.
 
-use notify::{RecommendedWatcher, RecursiveMode, Watcher, Config};
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{Receiver, channel};
 use std::time::Duration;
 
 /// Watch event for file changes
@@ -32,22 +32,20 @@ impl FileWatcher {
         let (tx, rx) = channel();
 
         let mut watcher = RecommendedWatcher::new(
-            move |result: Result<notify::Event, notify::Error>| {
-                match result {
-                    Ok(event) => {
-                        for path in event.paths {
-                            let watch_event = match event.kind {
-                                notify::EventKind::Modify(_) => WatchEvent::Modified(path),
-                                notify::EventKind::Create(_) => WatchEvent::Created(path),
-                                notify::EventKind::Remove(_) => WatchEvent::Deleted(path),
-                                _ => continue,
-                            };
-                            let _ = tx.send(watch_event);
-                        }
+            move |result: Result<notify::Event, notify::Error>| match result {
+                Ok(event) => {
+                    for path in event.paths {
+                        let watch_event = match event.kind {
+                            notify::EventKind::Modify(_) => WatchEvent::Modified(path),
+                            notify::EventKind::Create(_) => WatchEvent::Created(path),
+                            notify::EventKind::Remove(_) => WatchEvent::Deleted(path),
+                            _ => continue,
+                        };
+                        let _ = tx.send(watch_event);
                     }
-                    Err(e) => {
-                        let _ = tx.send(WatchEvent::Error(e.to_string()));
-                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(WatchEvent::Error(e.to_string()));
                 }
             },
             Config::default(),
@@ -97,10 +95,10 @@ impl Debouncer {
     /// Check if an event should be processed (not debounced)
     pub fn should_process(&mut self, path: &Path) -> bool {
         let now = std::time::Instant::now();
-        if let Some(last) = self.last_events.get(path) {
-            if now.duration_since(*last) < self.delay {
-                return false;
-            }
+        if let Some(last) = self.last_events.get(path)
+            && now.duration_since(*last) < self.delay
+        {
+            return false;
         }
         self.last_events.insert(path.to_path_buf(), now);
         true

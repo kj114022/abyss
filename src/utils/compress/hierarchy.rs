@@ -95,8 +95,7 @@ pub fn generate_hierarchical(
 
     // Calculate budgets for each tier
     let summary_budget = (base_budget as f64 * ContextTier::Summary.budget_multiplier()) as usize;
-    let detailed_budget =
-        (base_budget as f64 * ContextTier::Detailed.budget_multiplier()) as usize;
+    let detailed_budget = (base_budget as f64 * ContextTier::Detailed.budget_multiplier()) as usize;
     let full_budget = base_budget;
 
     let mut summary = Vec::new();
@@ -108,10 +107,7 @@ pub fn generate_hierarchical(
     let mut full_tokens = 0;
 
     for (path, content, _score) in scored_files {
-        let extension = path
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
         // Estimate tokens for each compression level
         let summary_content = compress_by_level(&content, CompressionLevel::Aggressive, extension);
@@ -170,7 +166,11 @@ pub fn format_hierarchical(context: &HierarchicalContext, tier: ContextTier) -> 
     );
 
     for (path, content) in files {
-        output.push_str(&format!("## {}\n\n```\n{}\n```\n\n", path.display(), content));
+        output.push_str(&format!(
+            "## {}\n\n```\n{}\n```\n\n",
+            path.display(),
+            content
+        ));
     }
 
     output
@@ -190,7 +190,10 @@ mod tests {
             ContextTier::Detailed.compression_level(),
             CompressionLevel::Standard
         );
-        assert_eq!(ContextTier::Full.compression_level(), CompressionLevel::None);
+        assert_eq!(
+            ContextTier::Full.compression_level(),
+            CompressionLevel::None
+        );
     }
 
     #[test]
@@ -203,7 +206,10 @@ mod tests {
     #[test]
     fn test_tier_from_str() {
         assert_eq!(ContextTier::from_str("summary"), Some(ContextTier::Summary));
-        assert_eq!(ContextTier::from_str("detailed"), Some(ContextTier::Detailed));
+        assert_eq!(
+            ContextTier::from_str("detailed"),
+            Some(ContextTier::Detailed)
+        );
         assert_eq!(ContextTier::from_str("full"), Some(ContextTier::Full));
         assert_eq!(ContextTier::from_str("invalid"), None);
     }

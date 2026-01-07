@@ -1,12 +1,14 @@
 use crate::config::{AbyssConfig, CompressionMode};
+// Re-export ScanEvent from core for backward compatibility
+pub use crate::core::ScanEvent;
 
 use crate::utils::ast::compress_ast;
 use crate::utils::clipboard::copy_to_clipboard;
 use crate::utils::compression::compress_content;
 use crate::utils::concepts::extract_concepts;
-use crate::utils::git_stats::{get_diff_files, get_git_stats};
+use crate::utils::git_stats::get_git_stats;
 use crate::utils::tokens::count_tokens;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crossbeam_channel::Sender;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -21,16 +23,6 @@ fn get_modified_time(path: &Path) -> Option<u64> {
         .and_then(|m| m.modified().ok())
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs())
-}
-
-#[derive(Debug, Clone)]
-pub enum ScanEvent {
-    StartScanning,
-    FilesFound(usize),
-    FileProcessed(PathBuf),
-    TokenCountUpdate(usize),
-    Complete(String), // Returns summary or output path
-    Error(String),
 }
 
 /// Main entry point for the Abyss scanner in CLI mode.
@@ -104,6 +96,7 @@ struct OutputState {
     prompt: Option<String>,
     formatter: Box<dyn crate::format::Formatter>,
     format_type: crate::config::OutputFormat,
+    bundle_files: Option<Vec<(PathBuf, String)>>,
 }
 
 impl OutputState {
@@ -128,6 +121,13 @@ impl OutputState {
             },
         )?;
 
+        // Initialize bundle collection if bundle path is set
+        let bundle_files = if config.bundle.is_some() {
+            Some(Vec::new())
+        } else {
+            None
+        };
+
         Ok(Self {
             file,
             path,
@@ -138,6 +138,7 @@ impl OutputState {
             prompt: config.prompt.clone(),
             formatter,
             format_type: config.output_format,
+            bundle_files,
         })
     }
 
@@ -206,6 +207,11 @@ impl OutputState {
         self.formatter
             .write_file(&mut self.file, path, content, summary, repo_root)?;
         self.current_tokens += tokens;
+
+        if let Some(files) = &mut self.bundle_files {
+            files.push((path.to_path_buf(), content.to_string()));
+        }
+
         Ok(())
     }
 
@@ -225,233 +231,25 @@ impl OutputState {
 }
 
 /// Discovers and sorts files according to configuration
+///
+/// This is a re-export for backward compatibility. The actual implementation
+/// is in `core::scanner::discover_files`.
 pub fn discover_files(
     config: &AbyssConfig,
     tx: Option<Sender<ScanEvent>>,
-) -> Result<(Vec<PathBuf>, PathBuf, Vec<PathBuf>)> {
-    let notify = |e: ScanEvent| {
-        if let Some(ref tx) = tx {
-            let _ = tx.send(e);
-        }
-    };
+) -> Result<(Vec<(PathBuf, PathBuf)>, Vec<PathBuf>)> {
+    crate::core::scanner::discover_files(config, tx)
+}
 
-    notify(ScanEvent::StartScanning);
-
-    let root_path = config
-        .path
-        .canonicalize()
-        .with_context(|| format!("Failed to find directory: {:?}", config.path))?;
-
-    // Load .abyssignore patterns and merge with config
-    let abyssignore_patterns = crate::utils::abyssignore::load_abyssignore(&root_path);
-    let mut all_ignore_patterns = config.ignore_patterns.clone();
-    all_ignore_patterns.extend(abyssignore_patterns);
-
-    // 1. Walk directory with full config
-    let walk_config = crate::fs::WalkConfig {
-        ignore_patterns: &all_ignore_patterns,
-        include_patterns: &config.include_patterns,
-        max_depth: config.max_depth,
-        max_file_size: config.max_file_size,
-    };
-    let mut paths = crate::fs::walk_directory_with_config(&root_path, walk_config)?;
-    notify(ScanEvent::FilesFound(paths.len()));
-
-    // 2. Filter by Diff
-    #[allow(clippy::collapsible_if)]
-    if let Some(ref target) = config.diff {
-        if let Some(diff_files) = get_diff_files(&root_path, target) {
-            let diff_set: std::collections::HashSet<PathBuf> =
-                diff_files.into_iter().map(PathBuf::from).collect();
-            paths.retain(|p| {
-                if let Ok(relative) = p.strip_prefix(&root_path) {
-                    diff_set.contains(relative)
-                } else {
-                    false
-                }
-            });
-            if config.verbose {
-                println!("Filtered by diff: {} remain", paths.len());
-            }
-        }
-    }
-
-    // 3. Git Stats
-    let git_stats = get_git_stats(&root_path);
-
-    // 4. Build Intelligence (Graph + Scores)
-    // Compute semantic rankings for all files to guide topological sorting.
-
-    let mut graph = crate::utils::graph::DependencyGraph::new();
-    let mut scores: HashMap<PathBuf, crate::utils::rank::FileScore> = HashMap::new();
-
-    // Pre-calculate Heuristic & Churn
-    for path in &paths {
-        let mut score = crate::utils::rank::FileScore {
-            heuristic: crate::utils::rank::heuristic_score(path),
-            ..Default::default()
-        };
-
-        if let Some(s) = git_stats.get(path) {
-            score.churn = std::cmp::min(s.churn_score * 5, 200) as i32;
-        }
-        scores.insert(path.clone(), score);
-    }
-
-    // Scan content for Entropy & Dependencies
-    // PARALLEL: Extract imports and calculate scores in parallel, then build graph atomically
-
-    // Phase 1: Parallel content processing
-    struct FileAnalysis {
-        path: PathBuf,
-        entropy: f64,
-        tokens: usize,
-        imports: Vec<String>,
-        extension: String,
-    }
-
-    let no_tokens = config.no_tokens;
-    let analyses: Vec<FileAnalysis> = paths
-        .par_iter()
-        .filter_map(|path| {
-            let content = std_fs::read_to_string(path).ok()?;
-            let extension = path
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-
-            let entropy = crate::utils::rank::calculate_entropy(&content);
-            let tokens = if !no_tokens {
-                // Use fast estimation during discovery, accurate count during output
-                crate::utils::tokens::estimate_tokens(&content)
-            } else {
-                content.len() / 4
-            };
-            let imports = crate::utils::dependencies::extract_imports(&content, &extension);
-
-            Some(FileAnalysis {
-                path: path.clone(),
-                entropy,
-                tokens,
-                imports,
-                extension,
-            })
-        })
-        .collect();
-
-    // Phase 2: Build graph atomically (fast, no I/O)
-    for analysis in analyses {
-        graph.add_node(analysis.path.clone());
-
-        // Update scores
-        if let Some(s) = scores.get_mut(&analysis.path) {
-            s.entropy = analysis.entropy;
-            s.tokens = analysis.tokens;
-        }
-
-        // Add edges
-        for import in analysis.imports {
-            if let Some(dep_path) =
-                crate::utils::dependencies::resolve_import(&import, &analysis.path, &root_path)
-            {
-                graph.add_edge(analysis.path.clone(), dep_path);
-            }
-        }
-    }
-
-    // Calculate PageRank
-    let pagerank = graph.calculate_pagerank();
-    for (path, pr) in pagerank {
-        if let Some(s) = scores.get_mut(&path) {
-            s.pagerank = pr;
-        }
-    }
-
-    // 5. Sort Topologically with Ranking Tie-Breaker
-    // Comparator: Higher scores appear earlier in the stream for independent nodes.
-
-    paths = graph.sort_topologically(|a, b| {
-        let score_a = scores.get(a).map(|s| s.final_score()).unwrap_or(0.0);
-        let score_b = scores.get(b).map(|s| s.final_score()).unwrap_or(0.0);
-
-        score_b
-            .partial_cmp(&score_a)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.cmp(b))
-    });
-
-    // 6. Smart Context Filtering (Knapsack)
-    let mut selected_paths = Vec::new();
-    let mut dropped_paths = Vec::new();
-    let mut _current_tokens = 0;
-
-    // Knapsack Process:
-    // Files are added in topological order (with high-value items prioritized within independent groups).
-    // Dependents typically appear later, but high PageRank ensures central files are prioritized where possible.
-    // But dependent chains constrain order.
-    // `mod.rs` (depends on utils) -> `mod.rs` MUST come after `utils`.
-    // If `utils` fills the budget -> `mod.rs` is dropped.
-    // This is bad. `mod.rs` provides the map.
-    // Strategy: Maybe we should calculate "Cumulative Tokens" and mark files to keep?
-    // But we can't break topological order for output (Rust compiler order).
-    // So we must output in Topo Order.
-    // But we can SELECT based on Score/Knapsack, effectively "Skipping" lines in the output list.
-    // YES.
-    // We shouldn't truncate the LIST. We should FILTER the LIST.
-    // Filter condition: Is this file "worth it"?
-    // Global Knapsack:
-    // 1. Gather all (Path, Score, Tokens).
-    // 2. Select Top-N items that fit in MaxTokens.
-    // 3. Output selected items in Topological Order.
-
-    if let Some(max_tokens) = config.max_tokens {
-        // Collect candidates
-        let mut candidates: Vec<&PathBuf> = paths.iter().collect();
-        // Sort by Score Descending (Ignore topology for selection)
-        candidates.sort_by(|a, b| {
-            let score_a = scores.get(*a).map(|s| s.final_score()).unwrap_or(0.0);
-            let score_b = scores.get(*b).map(|s| s.final_score()).unwrap_or(0.0);
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        let mut keep_set = std::collections::HashSet::new();
-        let mut used_tokens = 0;
-
-        for path in candidates {
-            let tokens = scores.get(path).map(|s| s.tokens).unwrap_or(0);
-            if used_tokens + tokens <= max_tokens {
-                keep_set.insert(path.clone());
-                used_tokens += tokens;
-            } else {
-                // If file is critical (heuristic > 900 e.g. README), maybe squeeze it in?
-                // For now strict limit.
-            }
-        }
-
-        for path in paths {
-            if keep_set.contains(&path) {
-                selected_paths.push(path);
-            } else {
-                dropped_paths.push(path);
-            }
-        }
-        _current_tokens = used_tokens;
-    } else {
-        selected_paths = paths;
-    }
-
-    notify(ScanEvent::FilesFound(selected_paths.len()));
-    Ok((selected_paths, root_path, dropped_paths))
+pub fn run_scan(config: AbyssConfig, sender: Option<Sender<ScanEvent>>) -> Result<()> {
+    let (files, dropped) = discover_files(&config, sender.clone())?;
+    process_files(files, dropped, config, sender)
 }
 
 /// Processes the selected files and generates output
 pub fn process_files(
-    paths: Vec<PathBuf>,
-    dropped_files: Vec<PathBuf>,
-    root_path: PathBuf,
+    mut files: Vec<(PathBuf, PathBuf)>,
+    mut dropped_files: Vec<PathBuf>,
     config: AbyssConfig,
     tx: Option<Sender<ScanEvent>>,
 ) -> Result<()> {
@@ -461,17 +259,162 @@ pub fn process_files(
         }
     };
 
-    // 1. Setup Streaming
+    // 1. Intelligence Phase (Graph, Scores, Ranking)
+    let mut git_stats_map = HashMap::new();
+    let roots: std::collections::HashSet<_> = files.iter().map(|(_, root)| root.clone()).collect();
+    for root in roots {
+        let stats = get_git_stats(&root);
+        git_stats_map.insert(root, stats);
+    }
+
+    let mut graph = crate::utils::graph::DependencyGraph::new();
+    let mut scores: HashMap<PathBuf, crate::utils::rank::FileScore> = HashMap::new();
+
+    // Pre-calculate Heuristic & Churn
+    for (path, root) in &files {
+        let mut score = crate::utils::rank::FileScore {
+            heuristic: crate::utils::rank::heuristic_score(path),
+            ..Default::default()
+        };
+
+        if let Some(stats) = git_stats_map.get(root)
+            && let Some(s) = stats.get(path)
+        {
+            score.churn = std::cmp::min(s.churn_score * 5, 200) as i32;
+        }
+        scores.insert(path.clone(), score);
+    }
+
+    // Scan content for Entropy & Dependencies (Parallel)
+    struct FileAnalysis {
+        path: PathBuf,
+        root: PathBuf,
+        entropy: f64,
+        tokens: usize,
+        imports: Vec<String>,
+        #[allow(dead_code)]
+        extension: String,
+        #[allow(dead_code)]
+        content: String,
+    }
+
+    let no_tokens = config.no_tokens;
+    let analyses: Vec<FileAnalysis> = files
+        .par_iter()
+        .filter_map(|(path, root)| {
+            let content = std_fs::read_to_string(path).ok()?;
+            let extension = path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            let entropy = crate::utils::rank::calculate_entropy(&content);
+            let tokens = if !no_tokens {
+                crate::utils::tokens::estimate_tokens(&content)
+            } else {
+                content.len() / 4
+            };
+            let imports = crate::utils::dependencies::extract_imports(&content, &extension);
+
+            Some(FileAnalysis {
+                path: path.clone(),
+                root: root.clone(),
+                entropy,
+                tokens,
+                imports,
+                extension,
+                content,
+            })
+        })
+        .collect();
+
+    // Build graph atomically
+    for analysis in &analyses {
+        graph.add_node(analysis.path.clone());
+
+        if let Some(s) = scores.get_mut(&analysis.path) {
+            s.entropy = analysis.entropy;
+            s.tokens = analysis.tokens;
+        }
+
+        for import in &analysis.imports {
+            if let Some(resolved) =
+                crate::utils::dependencies::resolve_import(import, &analysis.path, &analysis.root)
+            {
+                graph.add_edge(analysis.path.clone(), resolved);
+            }
+        }
+    }
+
+    // PageRank
+    let page_ranks = graph.calculate_pagerank();
+    for (path, score) in &page_ranks {
+        if let Some(s) = scores.get_mut(path) {
+            s.pagerank = *score;
+        }
+    }
+
+    // Sort & Knapsack
+    let all_paths: Vec<PathBuf> = files.iter().map(|(p, _)| p.clone()).collect();
+    let sorted_paths = crate::utils::rank::sort_files(&all_paths, &scores, &graph);
+
+    // Re-order and Filter
+    let mut final_files = Vec::new();
+    let mut current_total_tokens = 0;
+
+    let max_tokens = config.max_tokens.unwrap_or(usize::MAX);
+
+    // Create candidate list (sorted by topological order, but we want to filter by priority if budget constrained)
+    // Actually, knapsack logic was to prioritize high score items.
+    // If max_tokens is set, we sort by score first to select candidates, then output in topo order.
+
+    let mut selected_set = std::collections::HashSet::new();
+
+    if config.max_tokens.is_some() {
+        let mut candidates: Vec<&PathBuf> = all_paths.iter().collect();
+        candidates.sort_by(|a, b| {
+            let score_a = scores.get(*a).map(|s| s.final_score()).unwrap_or(0.0);
+            let score_b = scores.get(*b).map(|s| s.final_score()).unwrap_or(0.0);
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        for path in candidates {
+            let t = scores.get(path).map(|s| s.tokens).unwrap_or(0);
+            if current_total_tokens + t <= max_tokens {
+                selected_set.insert(path.clone());
+                current_total_tokens += t;
+            } else {
+                dropped_files.push(path.clone());
+            }
+        }
+    } else {
+        selected_set = all_paths.iter().cloned().collect();
+    }
+
+    for path in sorted_paths {
+        if selected_set.contains(&path)
+            && let Some((_, root)) = files.iter().find(|(p, _)| p == &path)
+        {
+            final_files.push((path, root.clone()));
+        }
+    }
+
+    files = final_files;
+    notify(ScanEvent::FilesFound(files.len()));
+
+    // 2. Setup Streaming and Output
     type ScanResult = Option<(PathBuf, String, Option<String>, usize)>;
     let (data_tx, data_rx) = crossbeam_channel::unbounded::<(usize, ScanResult)>();
     let total_tokens_atomic = AtomicUsize::new(0);
 
-    // 2. Cache Setup
     let cache = std::sync::Arc::new(crate::utils::cache::Cache::load());
     let config_sig = format!("{:?}", config);
 
-    // 3. Parallel Process
-    let paths_clone = paths.clone();
+    // 3. Parallel Process Content (Again, for output generation with caching)
+    let files_clone = files.clone();
     let config_ref = &config;
     let notify_ref = &notify;
     let total_tokens_ref = &total_tokens_atomic;
@@ -480,10 +423,16 @@ pub fn process_files(
 
     std::thread::scope(|s| {
         s.spawn(move || {
-            paths_clone
+            files_clone
                 .par_iter()
                 .enumerate()
-                .for_each(|(index, path)| {
+                .for_each(|(index, (path, _root))| {
+                    // Get content from analysis if available?
+                    // Analyses vector is local to previous scope.
+                    // We re-read or cache.
+                    // Original logic re-read and processed concepts/summary.
+
+                    // ... (Standard Content Processing Logic)
                     let extension = path
                         .extension()
                         .and_then(|s| s.to_str())
@@ -546,22 +495,34 @@ pub fn process_files(
                         content = crate::utils::privacy::redact_content(&content);
                     }
 
-                    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                    let concepts = extract_concepts(&content, extension);
+                    let extension_str = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                    let concepts = extract_concepts(&content, extension_str);
 
                     match config_ref.compression {
                         CompressionMode::Simple => {
                             content = compress_content(&content);
                         }
                         CompressionMode::Smart => {
-                            content = compress_ast(&content, extension);
+                            content = compress_ast(&content, extension_str);
                         }
                         CompressionMode::None => {}
                     }
 
+                    if !config_ref
+                        .compression_level
+                        .to_compression_mode()
+                        .eq(&CompressionMode::None)
+                    {
+                        content = crate::utils::compression::compress_by_level(
+                            &content,
+                            config_ref.compression_level,
+                            extension_str,
+                        );
+                    }
+
                     if !concepts.is_empty() {
                         let concept_str = concepts.join(", ");
-                        let (prefix, suffix) = match extension {
+                        let (prefix, suffix) = match extension_str {
                             "py" | "rb" | "sh" | "yaml" | "toml" | "dockerfile" | "makefile" => {
                                 ("#", "")
                             }
@@ -607,8 +568,7 @@ pub fn process_files(
                         notify_ref(ScanEvent::TokenCountUpdate(current));
                     }
 
-                    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                    let summary = crate::utils::summary::summarize_content(&content, extension);
+                    let summary = crate::utils::summary::summarize_content(&content, extension_str);
 
                     notify_ref(ScanEvent::FileProcessed(path.clone()));
                     let _ = data_tx.send((index, Some((path.clone(), content, summary, count))));
@@ -618,8 +578,18 @@ pub fn process_files(
 
         // 4. Consumer
         let mermaid_graph = if config_ref.graph {
-            let graph = crate::utils::dependencies::build_dependency_graph(&paths, &root_path);
-            Some(crate::format::mermaid::generate_diagram(&graph, &root_path))
+            // Only generate graph for the first root or merged?
+            // Merged graph from earlier intelligence phase is better, but here we just re-generate purely for display
+            // Let's use the files we have.
+            let paths_only: Vec<PathBuf> = files.iter().map(|(p, _)| p.clone()).collect();
+            // Root path is tricky. Use first root or config path.
+            let display_root = &config.path;
+            let graph =
+                crate::utils::dependencies::build_dependency_graph(&paths_only, display_root);
+            Some(crate::format::mermaid::generate_diagram(
+                &graph,
+                display_root,
+            ))
         } else {
             None
         };
@@ -628,7 +598,7 @@ pub fn process_files(
         let mut key_files = Vec::new();
         let mut purpose = None;
 
-        for path in paths.iter().take(5) {
+        for (path, _) in files.iter().take(5) {
             let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
             if let Ok(content) = std_fs::read_to_string(path) {
                 if let Some(s) = crate::utils::summary::summarize_content(&content, extension) {
@@ -665,14 +635,18 @@ pub fn process_files(
                 }
             };
 
-        if let Err(e) = out_state.write_directory_structure(&paths, &root_path) {
+        // Write dir structure
+        let paths_only: Vec<PathBuf> = files.iter().map(|(p, _)| p.clone()).collect();
+        // Use config.path as root for structure display if single repo, else common ancestor?
+        // Simpler: Just use config.path.
+        if let Err(e) = out_state.write_directory_structure(&paths_only, &config.path) {
             notify(ScanEvent::Error(e.to_string()));
             return;
         }
 
         let mut buffer: HashMap<usize, ScanResult> = HashMap::new();
         let mut next_idx = 0;
-        let total_files = paths.len();
+        let total_files = files.len();
 
         while next_idx < total_files {
             while buffer.contains_key(&next_idx) {
@@ -680,11 +654,11 @@ pub fn process_files(
                     if let Err(e) = out_state.check_rotate(tokens, &config.output) {
                         notify(ScanEvent::Error(e.to_string()));
                     }
-                    // Pass summary as deref for Option<&str>
+
+                    let root = files[next_idx].1.clone();
+
                     let summary_ref = summary.as_deref();
-                    if let Err(e) =
-                        out_state.write(&path, &content, summary_ref, &root_path, tokens)
-                    {
+                    if let Err(e) = out_state.write(&path, &content, summary_ref, &root, tokens) {
                         notify(ScanEvent::Error(e.to_string()));
                     }
                 } else {
@@ -707,6 +681,36 @@ pub fn process_files(
         let _ = out_state.finish(&dropped_files);
         let _ = cache.save();
 
+        // Save Bundle
+        if let Some(bundle_path) = &config.bundle
+            && let Some(files) = out_state.bundle_files
+        {
+            let compression_str = config.compression_level.to_string();
+            let query = config.prompt.clone();
+            // Add graph
+
+            let bundle = crate::utils::bundle::Bundle::new(
+                files,
+                mermaid_graph.clone(),
+                &compression_str,
+                query,
+            );
+
+            let result = if bundle_path.to_string_lossy().ends_with(".json") {
+                bundle.save_json(bundle_path)
+            } else {
+                bundle.save_tar_gz(bundle_path)
+            };
+
+            match result {
+                Ok(_) => notify(ScanEvent::Complete(format!(
+                    "Bundle saved to {:?}",
+                    bundle_path
+                ))),
+                Err(e) => notify(ScanEvent::Error(format!("Failed to save bundle: {}", e))),
+            }
+        }
+
         if config.clipboard_copy {
             let mut full_text = String::new();
             for p in &out_state.created_files {
@@ -725,10 +729,4 @@ pub fn process_files(
     });
 
     Ok(())
-}
-
-/// Main entry point for the Abyss scanner (legacy wrapper)
-pub fn run_scan(config: AbyssConfig, tx: Option<Sender<ScanEvent>>) -> Result<()> {
-    let (paths, root_path, dropped) = discover_files(&config, tx.clone())?;
-    process_files(paths, dropped, root_path, config, tx)
 }

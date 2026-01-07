@@ -40,6 +40,9 @@ fn test_image_ingestion() {
         redact: false,
         diff: None,
         graph: false,
+        compression_level: abyss::config::CompressionLevel::None,
+        bundle: None,
+        explain_diff: false,
     };
 
     // 3. Run
