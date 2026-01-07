@@ -21,6 +21,54 @@ pub enum CompressionMode {
     Smart,  // AST-aware compression
 }
 
+/// Multi-tier compression levels for fine-grained control
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum CompressionLevel {
+    /// No compression - full source code
+    #[default]
+    None,
+    /// Light - remove comments and extra whitespace only
+    Light,
+    /// Standard - remove comments, whitespace, and simple boilerplate
+    Standard,
+    /// Aggressive - replace function bodies with placeholders, keep signatures
+    Aggressive,
+}
+
+impl CompressionLevel {
+    /// Convert to the legacy CompressionMode for backward compatibility
+    pub fn to_compression_mode(self) -> CompressionMode {
+        match self {
+            CompressionLevel::None => CompressionMode::None,
+            CompressionLevel::Light => CompressionMode::Simple,
+            CompressionLevel::Standard => CompressionMode::Simple,
+            CompressionLevel::Aggressive => CompressionMode::Smart,
+        }
+    }
+    
+    /// Parse from string (for CLI)
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "none" | "0" => Some(CompressionLevel::None),
+            "light" | "1" => Some(CompressionLevel::Light),
+            "standard" | "2" => Some(CompressionLevel::Standard),
+            "aggressive" | "3" => Some(CompressionLevel::Aggressive),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for CompressionLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompressionLevel::None => write!(f, "none"),
+            CompressionLevel::Light => write!(f, "light"),
+            CompressionLevel::Standard => write!(f, "standard"),
+            CompressionLevel::Aggressive => write!(f, "aggressive"),
+        }
+    }
+}
+
 /// Main configuration for abyss
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AbyssConfig {
@@ -40,6 +88,8 @@ pub struct AbyssConfig {
     pub redact: bool,
     /// Compression mode for file content (None, Simple, or Smart AST-based)
     pub compression: CompressionMode,
+    /// Multi-tier compression level (None, Light, Standard, Aggressive)
+    pub compression_level: CompressionLevel,
     /// Split output into chunks of this many tokens
     pub split_tokens: Option<usize>,
     /// Enabled verbose logging to stdout
@@ -59,7 +109,6 @@ pub struct AbyssConfig {
     pub prompt: Option<String>,
     /// Maximum number of tokens to include in output
     pub max_tokens: Option<usize>,
-    /// Diff mode: Scan only changed files relative to this git ref (e.g., "main", "HEAD~1")
     /// Diff mode: Scan only changed files relative to this git ref (e.g., "main", "HEAD~1")
     pub diff: Option<String>,
     /// Include Mermaid dependency graph in output
@@ -189,6 +238,7 @@ impl Default for AbyssConfig {
             no_tokens: false,
             clipboard_copy: false,
             compression: CompressionMode::None,
+            compression_level: CompressionLevel::None,
             split_tokens: None,
             verbose: false,
             is_remote: false,
@@ -219,6 +269,7 @@ mod tests {
             no_tokens: false,
             clipboard_copy: false,
             compression: CompressionMode::None,
+            compression_level: CompressionLevel::None,
             split_tokens: None,
             verbose: false,
             is_remote: false,

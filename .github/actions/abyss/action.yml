@@ -1,0 +1,138 @@
+name: 'Abyss Context Generator'
+description: 'Generate LLM-optimized context from your codebase for AI-assisted code review and analysis'
+author: 'abyss'
+
+branding:
+  icon: 'layers'
+  color: 'purple'
+
+inputs:
+  path:
+    description: 'Path to the repository or directory to scan'
+    required: false
+    default: '.'
+  output:
+    description: 'Output file path'
+    required: false
+    default: 'abyss-context.xml'
+  format:
+    description: 'Output format (xml, json, markdown, plain)'
+    required: false
+    default: 'xml'
+  max-tokens:
+    description: 'Maximum tokens to include in output'
+    required: false
+    default: '100000'
+  compression:
+    description: 'Compression level (none, light, standard, aggressive)'
+    required: false
+    default: 'none'
+  diff:
+    description: 'Generate context only for changed files relative to this ref'
+    required: false
+    default: ''
+  query:
+    description: 'Query-driven context: find files relevant to this question'
+    required: false
+    default: ''
+  show-impact:
+    description: 'Show impact analysis for changed files'
+    required: false
+    default: 'false'
+  ignore:
+    description: 'Comma-separated list of patterns to ignore'
+    required: false
+    default: ''
+  include:
+    description: 'Comma-separated list of patterns to include'
+    required: false
+    default: ''
+  verbose:
+    description: 'Enable verbose output'
+    required: false
+    default: 'false'
+
+outputs:
+  output-file:
+    description: 'Path to the generated context file'
+    value: ${{ inputs.output }}
+  token-count:
+    description: 'Estimated token count of the output'
+    value: ${{ steps.run-abyss.outputs.tokens }}
+  file-count:
+    description: 'Number of files included in the context'
+    value: ${{ steps.run-abyss.outputs.files }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Rust
+      uses: dtolnay/rust-action@stable
+      
+    - name: Install abyss
+      shell: bash
+      run: |
+        cargo install abyss --locked || cargo install --path . --locked
+        
+    - name: Run abyss
+      id: run-abyss
+      shell: bash
+      run: |
+        # Build command
+        CMD="abyss ${{ inputs.path }}"
+        CMD="$CMD -o ${{ inputs.output }}"
+        CMD="$CMD --format ${{ inputs.format }}"
+        CMD="$CMD --max-tokens ${{ inputs.max-tokens }}"
+        
+        if [ "${{ inputs.compression }}" != "none" ]; then
+          CMD="$CMD --compress-level ${{ inputs.compression }}"
+        fi
+        
+        if [ -n "${{ inputs.diff }}" ]; then
+          CMD="$CMD --diff ${{ inputs.diff }}"
+        fi
+        
+        if [ -n "${{ inputs.query }}" ]; then
+          CMD="$CMD --query '${{ inputs.query }}'"
+        fi
+        
+        if [ "${{ inputs.show-impact }}" = "true" ]; then
+          CMD="$CMD --show-impact"
+        fi
+        
+        if [ -n "${{ inputs.ignore }}" ]; then
+          IFS=',' read -ra IGNORE <<< "${{ inputs.ignore }}"
+          for pattern in "${IGNORE[@]}"; do
+            CMD="$CMD --ignore '$pattern'"
+          done
+        fi
+        
+        if [ -n "${{ inputs.include }}" ]; then
+          IFS=',' read -ra INCLUDE <<< "${{ inputs.include }}"
+          for pattern in "${INCLUDE[@]}"; do
+            CMD="$CMD --include '$pattern'"
+          done
+        fi
+        
+        if [ "${{ inputs.verbose }}" = "true" ]; then
+          CMD="$CMD --verbose"
+        fi
+        
+        echo "Running: $CMD"
+        eval $CMD
+        
+        # Extract stats from output
+        if [ -f "${{ inputs.output }}" ]; then
+          TOKENS=$(wc -c < "${{ inputs.output }}" | awk '{print int($1/4)}')
+          FILES=$(grep -c "<file " "${{ inputs.output }}" 2>/dev/null || echo "0")
+          echo "tokens=$TOKENS" >> $GITHUB_OUTPUT
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          echo "Generated context: $FILES files, ~$TOKENS tokens"
+        fi
+        
+    - name: Upload context artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: abyss-context
+        path: ${{ inputs.output }}
+        retention-days: 7

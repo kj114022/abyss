@@ -30,6 +30,14 @@ impl DependencyGraph {
         &self.edges
     }
 
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn has_node(&self, path: &PathBuf) -> bool {
+        self.nodes.contains(path)
+    }
+
     /// Calculates PageRank for all nodes in the graph.
     /// Returns a map of PathBuf -> relative importance score (0.0 to 1.0ish).
     pub fn calculate_pagerank(&self) -> HashMap<PathBuf, f64> {

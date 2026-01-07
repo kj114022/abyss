@@ -1,0 +1,64 @@
+name: Generate PR Context
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  generate-context:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed for diff analysis
+          
+      - name: Generate LLM Context
+        id: abyss
+        uses: ./.github/actions/abyss
+        with:
+          diff: ${{ github.base_ref }}
+          max-tokens: '50000'
+          compression: 'light'
+          format: 'markdown'
+          output: 'pr-context.md'
+          
+      - name: Post Context Summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            const tokens = '${{ steps.abyss.outputs.token-count }}';
+            const files = '${{ steps.abyss.outputs.file-count }}';
+            
+            const body = `## LLM Context Generated
+            
+            | Metric | Value |
+            |--------|-------|
+            | Files included | ${files} |
+            | Estimated tokens | ${tokens} |
+            | Compression | light |
+            
+            The context has been uploaded as an artifact. Download it to use with your LLM.
+            
+            <details>
+            <summary>How to use</summary>
+            
+            1. Download the \`abyss-context\` artifact
+            2. Open with Claude, GPT, or your preferred LLM
+            3. Ask questions about the PR changes
+            
+            </details>
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });

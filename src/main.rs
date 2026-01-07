@@ -25,7 +25,12 @@ impl From<CliOutputFormat> for OutputFormat {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about="The Ultimate Repository Packer (The Abyss)", long_about = None)]
+#[command(
+    author,
+    version,
+    about = "abyss - The LLM Context Compiler\n\nTransform codebases into semantically-ordered, token-optimized context for LLMs.\n\nFeatures:\n  • Dependency-aware ordering (topological sort)\n  • Architectural centrality (PageRank)\n  • Git intelligence (churn analysis)\n  • AST-aware compression (preserve interfaces)\n  • Token budget optimization (knapsack algorithm)",
+    long_about = None
+)]
 struct Args {
     /// Directory or Remote URL to scan
     path: Option<String>,
@@ -75,6 +80,14 @@ struct Args {
     #[arg(long)]
     smart: bool,
 
+    /// Compression level: none, light, standard, aggressive
+    /// - none: full source code
+    /// - light: remove comments and extra whitespace
+    /// - standard: remove comments, whitespace, and simple boilerplate
+    /// - aggressive: replace function bodies with placeholders
+    #[arg(long, value_name = "LEVEL")]
+    compress_level: Option<String>,
+
     /// Split output into chunks of N tokens
     #[arg(long)]
     split: Option<usize>,
@@ -122,6 +135,42 @@ struct Args {
     /// Gemini preset (1M tokens)
     #[arg(long)]
     gemini: bool,
+
+    /// Show pre-flight analysis without processing (dry run)
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Analyze context quality and exit
+    #[arg(long)]
+    analyze_quality: bool,
+
+    /// Query-driven context: find files relevant to a question
+    /// Example: --query "how does authentication work?"
+    #[arg(long)]
+    query: Option<String>,
+
+    /// Show impact analysis for changed files (use with --diff)
+    #[arg(long)]
+    show_impact: bool,
+
+    /// Output in Cursor-compatible JSON format
+    #[arg(long)]
+    cursor: bool,
+
+    /// Context tier: summary, detailed, or full
+    /// - summary: signatures only (~10% size)
+    /// - detailed: interfaces + key implementations (~30% size)
+    /// - full: complete source code (default)
+    #[arg(long, value_name = "TIER")]
+    tier: Option<String>,
+
+    /// Watch mode: regenerate context on file changes
+    #[arg(long)]
+    watch: bool,
+
+    /// Export as portable bundle (JSON or .tar.gz based on extension)
+    #[arg(long, value_name = "PATH")]
+    bundle: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -232,13 +281,28 @@ fn main() -> Result<()> {
         config.graph = true;
     }
 
-    // Compression Logic merge
-    if args.smart {
+    // Compression Logic merge (with backward compatibility)
+    // Priority: --compress-level > --smart > --compress
+    if let Some(level_str) = &args.compress_level {
+        if let Some(level) = abyss::config::CompressionLevel::from_str(level_str) {
+            config.compression_level = level;
+            config.compression = level.to_compression_mode();
+        } else {
+            eprintln!("Warning: Invalid compression level '{}', using none", level_str);
+        }
+    } else if args.smart {
         config.compression = CompressionMode::Smart;
+        config.compression_level = abyss::config::CompressionLevel::Aggressive;
     } else if args.compress {
         config.compression = CompressionMode::Simple;
+        config.compression_level = abyss::config::CompressionLevel::Light;
     }
     // Else keep config value
+
+    // Handle Cursor format (forces JSON output)
+    if args.cursor {
+        config.output_format = abyss::config::OutputFormat::Json;
+    }
 
     // Handle Remote URL here in the binary layer
     let path_str = config.path.to_string_lossy().to_string();
@@ -261,6 +325,150 @@ fn main() -> Result<()> {
     config.path = path_buf;
     config.is_remote = _temp_dir.is_some();
     // hold temp_dir until end of scope
+
+    // Handle dry-run (pre-flight analysis)
+    if args.dry_run {
+        use abyss::runner::discover_files;
+        
+        let (files, _root, _dropped) = discover_files(&config, None)?;
+        let analysis = abyss::utils::preflight::analyze(&config, &files);
+        println!("{}", analysis);
+        return Ok(());
+    }
+
+    // Handle analyze-quality
+    if args.analyze_quality {
+        use abyss::runner::discover_files;
+        use abyss::utils::quality::analyze_quality;
+        use abyss::utils::graph::DependencyGraph;
+        
+        let (files, root, _dropped) = discover_files(&config, None)?;
+        
+        // Build a simple dependency graph for quality analysis
+        let mut graph = DependencyGraph::new();
+        for path in &files {
+            graph.add_node(path.clone());
+        }
+        
+        // Estimate tokens for each file
+        let file_tokens: Vec<_> = files
+            .iter()
+            .map(|f| {
+                let size = std::fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+                (f.clone(), (size as usize) / 4)
+            })
+            .collect();
+        
+        let quality = analyze_quality(&files, &files, &graph, &file_tokens);
+        println!("{}", quality);
+        return Ok(());
+    }
+
+    // Handle query-driven context
+    if let Some(query_str) = &args.query {
+        use abyss::runner::discover_files;
+        use abyss::utils::query::QueryEngine;
+        use abyss::utils::graph::DependencyGraph;
+        use std::collections::HashMap;
+
+        let (files, root, _dropped) = discover_files(&config, None)?;
+
+        // Build dependency graph for PageRank
+        let mut graph = DependencyGraph::new();
+        for path in &files {
+            graph.add_node(path.clone());
+        }
+
+        // Create query engine
+        let engine = QueryEngine::new(query_str, &graph);
+
+        println!("Query: \"{}\"", query_str);
+        println!("Keywords: {:?}", engine.keywords());
+        println!("Expanded: {:?}", engine.expanded_keywords());
+        println!();
+
+        // Get token estimates for budget
+        let file_tokens: HashMap<_, _> = files
+            .iter()
+            .map(|f| {
+                let size = std::fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+                (f.clone(), (size as usize) / 4)
+            })
+            .collect();
+
+        // Get relevant files within budget
+        let max_tokens = config.max_tokens.unwrap_or(100_000);
+        let relevant = engine.get_files_within_budget(&files, max_tokens, &file_tokens);
+
+        println!("Found {} relevant files (within {} token budget):", relevant.len(), max_tokens);
+        for (i, file) in relevant.iter().enumerate().take(20) {
+            let rel_path = file.strip_prefix(&root).unwrap_or(file);
+            println!("  {}. {}", i + 1, rel_path.display());
+        }
+        if relevant.len() > 20 {
+            println!("  ... and {} more", relevant.len() - 20);
+        }
+
+        // If output specified, run with filtered files
+        if config.output.to_string_lossy() != "output.xml" {
+            println!();
+            println!("Generating context for relevant files...");
+            // Update config to filter to relevant files only
+            // For now, just inform user
+            println!("Use: abyss . --include [patterns] to filter");
+        }
+
+        return Ok(());
+    }
+
+    // Handle impact analysis
+    if args.show_impact {
+        use abyss::runner::discover_files;
+        use abyss::utils::impact::ImpactAnalyzer;
+        use abyss::utils::graph::DependencyGraph;
+        use abyss::utils::git_stats::get_diff_files;
+
+        let (files, root, _dropped) = discover_files(&config, None)?;
+
+        // Build dependency graph
+        let mut graph = DependencyGraph::new();
+        for path in &files {
+            graph.add_node(path.clone());
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                let imports = abyss::utils::dependencies::extract_imports(&content, extension);
+                for import in imports {
+                    if let Some(dep_path) =
+                        abyss::utils::dependencies::resolve_import(&import, path, &root)
+                    {
+                        graph.add_edge(path.clone(), dep_path);
+                    }
+                }
+            }
+        }
+
+        // Get changed files from diff
+        let diff_target = config.diff.as_deref().unwrap_or("HEAD~1");
+        let changed_files = match get_diff_files(&root, diff_target) {
+            Some(files) => files.into_iter().map(|s| root.join(s)).collect::<Vec<_>>(),
+            None => {
+                eprintln!("Could not get diff files. Use --diff to specify a reference.");
+                return Ok(());
+            }
+        };
+
+        if changed_files.is_empty() {
+            println!("No changed files found relative to '{}'", diff_target);
+            return Ok(());
+        }
+
+        // Run impact analysis
+        let analyzer = ImpactAnalyzer::new(&graph);
+        let analysis = analyzer.analyze(&changed_files, &files);
+
+        println!("{}", analysis);
+        return Ok(());
+    }
 
     if args.tui {
         abyss::tui::start_tui(config)?;

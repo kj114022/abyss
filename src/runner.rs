@@ -242,9 +242,14 @@ pub fn discover_files(
         .canonicalize()
         .with_context(|| format!("Failed to find directory: {:?}", config.path))?;
 
+    // Load .abyssignore patterns and merge with config
+    let abyssignore_patterns = crate::utils::abyssignore::load_abyssignore(&root_path);
+    let mut all_ignore_patterns = config.ignore_patterns.clone();
+    all_ignore_patterns.extend(abyssignore_patterns);
+
     // 1. Walk directory with full config
     let walk_config = crate::fs::WalkConfig {
-        ignore_patterns: &config.ignore_patterns,
+        ignore_patterns: &all_ignore_patterns,
         include_patterns: &config.include_patterns,
         max_depth: config.max_depth,
         max_file_size: config.max_file_size,
@@ -294,34 +299,63 @@ pub fn discover_files(
     }
 
     // Scan content for Entropy & Dependencies
-    // Note: Sequential execution chosen to maintain Graph integrity.
+    // PARALLEL: Extract imports and calculate scores in parallel, then build graph atomically
 
-    for path in &paths {
-        graph.add_node(path.clone());
-        if let Ok(content) = std_fs::read_to_string(path) {
-            // Dependencies
-            let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    // Phase 1: Parallel content processing
+    struct FileAnalysis {
+        path: PathBuf,
+        entropy: f64,
+        tokens: usize,
+        imports: Vec<String>,
+        extension: String,
+    }
 
-            // Entropy & Tokens & Summary
-            if let Some(s) = scores.get_mut(path) {
-                s.entropy = crate::utils::rank::calculate_entropy(&content);
-                if !config.no_tokens {
-                    s.tokens = crate::utils::tokens::count_tokens(&content).unwrap_or(0);
-                } else {
-                    // Heuristic: ~4 chars per token
-                    s.tokens = content.len() / 4;
-                }
-            }
+    let no_tokens = config.no_tokens;
+    let analyses: Vec<FileAnalysis> = paths
+        .par_iter()
+        .filter_map(|path| {
+            let content = std_fs::read_to_string(path).ok()?;
+            let extension = path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
 
-            // Extract Imports
-            let imports = crate::utils::dependencies::extract_imports(&content, extension);
+            let entropy = crate::utils::rank::calculate_entropy(&content);
+            let tokens = if !no_tokens {
+                // Use fast estimation during discovery, accurate count during output
+                crate::utils::tokens::estimate_tokens(&content)
+            } else {
+                content.len() / 4
+            };
+            let imports = crate::utils::dependencies::extract_imports(&content, &extension);
 
-            for import in imports {
-                if let Some(dep_path) =
-                    crate::utils::dependencies::resolve_import(&import, path, &root_path)
-                {
-                    graph.add_edge(path.clone(), dep_path);
-                }
+            Some(FileAnalysis {
+                path: path.clone(),
+                entropy,
+                tokens,
+                imports,
+                extension,
+            })
+        })
+        .collect();
+
+    // Phase 2: Build graph atomically (fast, no I/O)
+    for analysis in analyses {
+        graph.add_node(analysis.path.clone());
+
+        // Update scores
+        if let Some(s) = scores.get_mut(&analysis.path) {
+            s.entropy = analysis.entropy;
+            s.tokens = analysis.tokens;
+        }
+
+        // Add edges
+        for import in analysis.imports {
+            if let Some(dep_path) =
+                crate::utils::dependencies::resolve_import(&import, &analysis.path, &root_path)
+            {
+                graph.add_edge(analysis.path.clone(), dep_path);
             }
         }
     }
