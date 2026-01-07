@@ -1,6 +1,7 @@
 # Rust
 target/
 **/*.rs.bk
+Cargo.lock
 
 # Apple
 .DS_Store
@@ -21,29 +22,18 @@ npm/node_modules/
 npm-debug.log
 yarn-error.log
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-env/
-venv/
+# Abyss Cache
+.abyss-cache.json
 
-# Abyss Output
-abyss-output.*
-*.xml
-*.json
-*.md
-dropped_files.txt
-prompt.txt
+# Environment
+.env
+*.env
+secret.env
 
 # Misc
 dist/
 tmp/
-.env
-secret.env
-.abyss-cache.json
+*.log
 
-# Output files
-abyss-output.xml
-repomix-output.xml
-*.output.xml
+# Test outputs (keep for local testing)
+/test_output/
