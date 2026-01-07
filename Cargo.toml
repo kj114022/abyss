@@ -1,6 +1,6 @@
 [package]
 name = "abyss"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2024"
 description = "Semantic code compiler for LLM context - intelligently order and optimize codebases for AI consumption"
 authors = ["KJ"]
